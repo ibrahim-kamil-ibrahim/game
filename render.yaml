@@ -10,7 +10,9 @@ services:
     plan: free
     region: frankfurt
     rootDir: backend
-    buildCommand: npm ci && npx prisma generate && npm run build
+    # Render sets NODE_ENV=production during builds, which makes `npm ci` skip
+    # devDependencies (typescript, @types/*). Those are required to compile.
+    buildCommand: npm ci --include=dev && npx prisma generate && npm run build
     startCommand: npm run start:deploy
     healthCheckPath: /health
     autoDeploy: true
