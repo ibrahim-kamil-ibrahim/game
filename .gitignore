@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+backend/dist/
+admin-web/dist/
+employer-mobile/build/
+employer-mobile/.dart_tool/
+employer-mobile/.flutter-plugins
+employer-mobile/.flutter-plugins-dependencies
+employer-mobile/.packages
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+backend/.env
+admin-web/.env
+admin-web/.env.local
+employer-mobile/android/key.properties
+employer-mobile/android/app/*.jks
+employer-mobile/android/app/*.keystore
+*.pem
+*.key
+
+# Logs and runtime
+*.log
+logs/
+coverage/
+.vite/
+.tmp/
+temp/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.iml
+
+# Deployment caches
+.vercel/
+.netlify/
+.wrangler/
+
+# Prisma local
+backend/prisma/*.db

@@ -1,0 +1,495 @@
+// Prisma schema for the Game Rental Management System.
+// Money is stored as integer santim (1 ETB = 100 santim) - never floating point.
+// All timestamps are stored in UTC; the business timezone is applied at read time.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  EMPLOYER
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum MachineStatus {
+  AVAILABLE
+  IN_USE
+  MAINTENANCE
+  INACTIVE
+}
+
+enum PackageStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PackageScope {
+  ALL
+  CATEGORY
+  MACHINES
+}
+
+enum PaymentMethod {
+  CASH
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  REFUNDED
+  VOIDED
+}
+
+enum PaymentType {
+  RENTAL
+  EXTENSION
+}
+
+enum SessionStatus {
+  CREATED
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+  EXPIRED
+}
+
+enum SessionEventType {
+  STARTED
+  PAUSED
+  RESUMED
+  EXTENDED
+  ENDED_MANUAL
+  EXPIRED
+  CANCELLED
+}
+
+enum ExpenseCategory {
+  ELECTRICITY
+  MAINTENANCE
+  RENT
+  INTERNET
+  EMPLOYEE_COSTS
+  OTHER
+}
+
+enum NotificationType {
+  SESSION_STARTED
+  SESSION_EXPIRING
+  SESSION_EXPIRED
+  SESSION_EXTENDED
+  SESSION_ENDED
+  PAYMENT_RECORDED
+  MACHINE_STATUS
+  EMPLOYER_ACTIVITY
+  SYSTEM
+}
+
+// ---------------------------------------------------------------------------
+// Business / settings
+// ---------------------------------------------------------------------------
+
+model Business {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  phone     String?
+  address   String?
+  currency  String   @default("ETB")
+  timezone  String   @default("Africa/Addis_Ababa")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  settings        BusinessSettings?
+  users           User[]
+  categories      EquipmentCategory[]
+  machines        GameMachine[]
+  packages        GamePackage[]
+  payments        Payment[]
+  sessions        GameSession[]
+  expenses        Expense[]
+  auditLogs       AuditLog[]
+  notifications   Notification[]
+}
+
+model BusinessSettings {
+  id                     String   @id @default(uuid()) @db.Uuid
+  businessId             String   @unique @db.Uuid
+  allowExtension         Boolean  @default(true)
+  allowPause             Boolean  @default(false)
+  allowManualEnd         Boolean  @default(false)
+  requireEndReason       Boolean  @default(false)
+  expiryWarningMinutes   Int      @default(5)
+  lowCashThresholdSantim Int?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Users / auth
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  businessId   String     @db.Uuid
+  role         Role
+  fullName     String
+  username     String     @unique
+  phone        String?
+  passwordHash String
+  status       UserStatus @default(ACTIVE)
+  lastLoginAt  DateTime?
+  /// Encrypted temporary password for admin hand-off. Cleared on first login
+  /// or when the employer changes their password.
+  initialPasswordEncrypted String?
+  initialPasswordSetAt     DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  deletedAt    DateTime?
+
+  business            Business         @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  refreshTokens       RefreshToken[]
+  payments            Payment[]        @relation("PaymentEmployer")
+  createdPayments     Payment[]        @relation("PaymentCreator")
+  sessions            GameSession[]    @relation("SessionEmployer")
+  endedSessions       GameSession[]    @relation("SessionEnder")
+  extensions          SessionExtension[]
+  expenses            Expense[]
+  auditLogs           AuditLog[]
+  notifications       Notification[]
+  createdMachineQrs   MachineQRCode[]
+
+  @@index([businessId, role, status])
+  @@index([deletedAt])
+}
+
+model RefreshToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @db.Uuid
+  tokenHash    String    @unique
+  familyId     String    @db.Uuid
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String?   @db.Uuid
+  createdByIp  String?
+  userAgent    String?
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// Equipment
+// ---------------------------------------------------------------------------
+
+model EquipmentCategory {
+  id          String   @id @default(uuid()) @db.Uuid
+  businessId  String   @db.Uuid
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  machines GameMachine[]
+  packages GamePackage[]
+
+  @@unique([businessId, name])
+  @@index([businessId, isActive])
+}
+
+model GameMachine {
+  id           String        @id @default(uuid()) @db.Uuid
+  businessId   String        @db.Uuid
+  categoryId   String?       @db.Uuid
+  name         String
+  code         String
+  description  String?
+  brand        String?
+  model        String?
+  serialNumber String?
+  location     String?
+  imageUrl     String?
+  status       MachineStatus @default(AVAILABLE)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  deletedAt    DateTime?
+
+  business   Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  category   EquipmentCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  qrCodes    MachineQRCode[]
+  sessions   GameSession[]
+  packages   PackageMachine[]
+  payments   Payment[]
+
+  @@unique([businessId, code])
+  @@index([businessId, status])
+  @@index([categoryId])
+  @@index([deletedAt])
+}
+
+model MachineQRCode {
+  id          String    @id @default(uuid()) @db.Uuid
+  machineId   String    @db.Uuid
+  tokenHash   String    @unique
+  tokenEncrypted String
+  tokenHint   String
+  version     Int       @default(1)
+  isActive    Boolean   @default(true)
+  createdById String?   @db.Uuid
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  machine   GameMachine @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  createdBy User?       @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([machineId, isActive])
+}
+
+// ---------------------------------------------------------------------------
+// Packages
+// ---------------------------------------------------------------------------
+
+model GamePackage {
+  id              String        @id @default(uuid()) @db.Uuid
+  businessId      String        @db.Uuid
+  categoryId      String?       @db.Uuid
+  name            String
+  description     String?
+  durationMinutes Int
+  priceSantim     Int
+  status          PackageStatus @default(ACTIVE)
+  scope           PackageScope  @default(ALL)
+  displayOrder    Int           @default(0)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  deletedAt       DateTime?
+
+  business   Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  category   EquipmentCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  machines   PackageMachine[]
+  payments   Payment[]
+  sessions   GameSession[]
+  extensions SessionExtension[]
+
+  @@index([businessId, status, displayOrder])
+  @@index([categoryId])
+}
+
+model PackageMachine {
+  packageId String @db.Uuid
+  machineId String @db.Uuid
+
+  package GamePackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  machine GameMachine @relation(fields: [machineId], references: [id], onDelete: Cascade)
+
+  @@id([packageId, machineId])
+  @@index([machineId])
+}
+
+// ---------------------------------------------------------------------------
+// Payments
+// ---------------------------------------------------------------------------
+
+model Payment {
+  id                     String        @id @default(uuid()) @db.Uuid
+  businessId             String        @db.Uuid
+  transactionRef         String        @unique
+  type                   PaymentType   @default(RENTAL)
+  employerId             String        @db.Uuid
+  createdById            String        @db.Uuid
+  machineId              String        @db.Uuid
+  packageId              String?       @db.Uuid
+  packageNameSnapshot    String
+  durationMinutesSnapshot Int
+  amountSantim           Int
+  currency               String        @default("ETB")
+  method                 PaymentMethod @default(CASH)
+  status                 PaymentStatus @default(PENDING)
+  idempotencyKey         String?
+  notes                  String?
+  paidAt                 DateTime?
+  refundedAt             DateTime?
+  voidedAt               DateTime?
+  voidReason             String?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  business  Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  employer  User              @relation("PaymentEmployer", fields: [employerId], references: [id], onDelete: Restrict)
+  createdBy User              @relation("PaymentCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  machine   GameMachine       @relation(fields: [machineId], references: [id], onDelete: Restrict)
+  package   GamePackage?      @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  session   GameSession?
+  extension SessionExtension?
+
+  @@unique([businessId, idempotencyKey])
+  @@index([businessId, paidAt])
+  @@index([employerId, paidAt])
+  @@index([machineId, paidAt])
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Sessions
+// ---------------------------------------------------------------------------
+
+model GameSession {
+  id                     String        @id @default(uuid()) @db.Uuid
+  businessId             String        @db.Uuid
+  machineId              String        @db.Uuid
+  employerId             String        @db.Uuid
+  paymentId              String        @unique @db.Uuid
+  packageId              String?       @db.Uuid
+  packageNameSnapshot    String
+  durationMinutesSnapshot Int
+  priceSantim            Int
+  status                 SessionStatus @default(CREATED)
+  startedAt              DateTime?
+  endsAt                 DateTime?
+  pausedAt               DateTime?
+  totalPausedSeconds     Int           @default(0)
+  actualEndedAt          DateTime?
+  actualDurationSeconds  Int?
+  endedById              String?       @db.Uuid
+  endedByRole            Role?
+  endReason              String?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  business   Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  machine    GameMachine        @relation(fields: [machineId], references: [id], onDelete: Restrict)
+  employer   User               @relation("SessionEmployer", fields: [employerId], references: [id], onDelete: Restrict)
+  endedBy    User?              @relation("SessionEnder", fields: [endedById], references: [id], onDelete: SetNull)
+  payment    Payment            @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  package    GamePackage?       @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  extensions SessionExtension[]
+  events     SessionEvent[]
+
+  @@index([businessId, status])
+  @@index([machineId, status])
+  @@index([employerId, status])
+  @@index([endsAt])
+  @@index([startedAt])
+}
+
+model SessionExtension {
+  id                  String   @id @default(uuid()) @db.Uuid
+  sessionId           String   @db.Uuid
+  paymentId           String   @unique @db.Uuid
+  packageId           String?  @db.Uuid
+  packageNameSnapshot String
+  durationMinutes     Int
+  priceSantim         Int
+  previousEndsAt      DateTime
+  newEndsAt           DateTime
+  createdById         String   @db.Uuid
+  createdAt           DateTime @default(now())
+
+  session   GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  payment   Payment     @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  package   GamePackage? @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  createdBy User        @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([sessionId])
+}
+
+model SessionEvent {
+  id         String           @id @default(uuid()) @db.Uuid
+  sessionId  String           @db.Uuid
+  type       SessionEventType
+  actorId    String?          @db.Uuid
+  actorRole  Role?
+  metadata   Json?
+  createdAt  DateTime         @default(now())
+
+  session GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Expenses / audit / notifications
+// ---------------------------------------------------------------------------
+
+model Expense {
+  id            String          @id @default(uuid()) @db.Uuid
+  businessId    String          @db.Uuid
+  title         String
+  category      ExpenseCategory
+  amountSantim  Int
+  description   String?
+  expenseDate   DateTime
+  recordedById  String          @db.Uuid
+  receiptUrl    String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  deletedAt     DateTime?
+
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  recordedBy User     @relation(fields: [recordedById], references: [id], onDelete: Restrict)
+
+  @@index([businessId, expenseDate])
+  @@index([deletedAt])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  businessId String   @db.Uuid
+  userId     String?  @db.Uuid
+  actorRole  Role?
+  action     String
+  entityType String
+  entityId   String?
+  before     Json?
+  after      Json?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([businessId, createdAt])
+  @@index([entityType, entityId])
+  @@index([userId])
+}
+
+model Notification {
+  id         String           @id @default(uuid()) @db.Uuid
+  businessId String           @db.Uuid
+  userId     String?          @db.Uuid
+  audience   Role?
+  type       NotificationType
+  title      String
+  body       String
+  data       Json?
+  readAt     DateTime?
+  createdAt  DateTime         @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([businessId, audience, createdAt])
+}

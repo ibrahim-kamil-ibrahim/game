@@ -1,0 +1,59 @@
+# Render Blueprint for the Game Rental API.
+#
+# Free-plan limitations are documented in docs/FREE_HOSTING_LIMITATIONS.md.
+# Secrets must be entered in the Render dashboard: values marked `sync: false`
+# are never stored in this repository.
+services:
+  - type: web
+    name: game-rental-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    rootDir: backend
+    buildCommand: npm ci && npx prisma generate && npm run build
+    startCommand: npm run start:deploy
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: QR_HMAC_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS
+        sync: false
+      - key: COOKIE_SAME_SITE
+        value: none
+      - key: ACCESS_TOKEN_TTL_MINUTES
+        value: "30"
+      - key: REFRESH_TOKEN_TTL_DAYS
+        value: "30"
+      - key: REFRESH_REUSE_GRACE_SECONDS
+        value: "60"
+      - key: BUSINESS_NAME
+        value: GameZone Gaming Center
+      - key: BUSINESS_TIMEZONE
+        value: Africa/Addis_Ababa
+      - key: BUSINESS_CURRENCY
+        value: ETB
+      - key: SEED_ADMIN_USERNAME
+        value: admin
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
+      - key: SEED_ADMIN_FULL_NAME
+        value: Business Owner
+      - key: SEED_SAMPLE_DATA
+        value: "false"
+      - key: RUN_DB_SEED
+        value: "false"
+      - key: SESSION_EXPIRY_INTERVAL_MS
+        value: "5000"
