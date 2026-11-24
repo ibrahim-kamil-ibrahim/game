@@ -3,6 +3,34 @@
 The Flutter app is an operational client only. It contains no database credentials and no JWT secrets.
 The API URL is compiled in at build time.
 
+## 0. Production build target (24 November 2026)
+
+Production API: **https://game-rental-api-znao.onrender.com/api/v1**
+
+Build command:
+
+```powershell
+cd employer-mobile
+.\tool\build_release.ps1 -ApiBaseUrl "https://game-rental-api-znao.onrender.com/api/v1"
+```
+
+The signed APK/AAB are produced under `build/app/outputs/`. The previous artifacts pointed at the
+emulator URL and must not be distributed. See section 3 for artifact verification.
+
+Built and verified on 24 November 2026:
+
+| Artifact | Size | SHA-256 |
+|---|---|---|
+| `app-release.apk` | 76.08 MB | `A3EFD82DB34B0EFBB53F10CADE0B1F08CC987EAC519083F47029E12DEA83C08F` |
+| `app-release.aab` | 65.21 MB | `BD048E824C6CB5DCFBE5051F11FAE25F74051B686267D7F427B6B55F47437238` |
+
+- `flutter analyze`: no issues.
+- `flutter test`: 6/6 passed.
+- Compiled AOT snapshot contains `game-rental-api-znao.onrender.com` and **no** `10.0.2.2:4000` or
+  `localhost:4000`.
+- APK signed with the GameZone release certificate (V2), SHA-256
+  `dcb51044a9260fcc95f5593a300d3704b8fb55df9448bf5c57f1122710bd9933`.
+
 ## 1. Central API configuration
 
 `lib/core/config/app_config.dart`:
@@ -17,7 +45,7 @@ static const String apiBaseUrl = String.fromEnvironment(
 - Default is the Android emulator's host alias for local development.
 - Production builds **must** pass the Render HTTPS URL:
   ```
-  --dart-define=API_BASE_URL=https://<render-service>.onrender.com/api/v1
+  --dart-define=API_BASE_URL=https://game-rental-api-znao.onrender.com/api/v1
   ```
 - The URL always includes `/api/v1`.
 - Android cleartext HTTP is allowed only for `10.0.2.2`, `localhost` and `127.0.0.1` in
@@ -62,14 +90,14 @@ flutter pub get
 flutter analyze
 flutter test
 
-flutter build apk --release --dart-define=API_BASE_URL=https://<render-service>.onrender.com/api/v1
-flutter build appbundle --release --dart-define=API_BASE_URL=https://<render-service>.onrender.com/api/v1
+flutter build apk --release --dart-define=API_BASE_URL=https://game-rental-api-znao.onrender.com/api/v1
+flutter build appbundle --release --dart-define=API_BASE_URL=https://game-rental-api-znao.onrender.com/api/v1
 ```
 
 Or use the guarded helper:
 
 ```powershell
-.\tool\build_release.ps1 -ApiBaseUrl "https://<render-service>.onrender.com/api/v1"
+.\tool\build_release.ps1 -ApiBaseUrl "https://game-rental-api-znao.onrender.com/api/v1"
 ```
 
 It refuses non-HTTPS URLs and missing signing configuration.
@@ -86,8 +114,9 @@ Verify signing:
   build/app/outputs/flutter-apk/app-release.apk
 ```
 
-The checked-in/local APK was previously built against the emulator URL; **rebuild it after Render is
-deployed** before giving it to an employer.
+The release artifacts were rebuilt on 24 November 2026 against
+`https://game-rental-api-znao.onrender.com/api/v1`; the old emulator artifacts were overwritten.
+Physical-device testing is still required before distribution (section 5).
 
 ## 4. Install and first login
 

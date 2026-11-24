@@ -11,6 +11,20 @@ dashboard. There is no customer account or customer app.
 | Employer app | Flutter 3, Dart, Material 3, Riverpod, GoRouter, Dio, Mobile Scanner | `employer-mobile/` |
 | Documentation | Architecture, API, database, business rules, security, deployment | `docs/` |
 
+## Live deployment (free tiers)
+
+| Service | URL |
+|---|---|
+| Admin dashboard | **https://game-rental-admin.onrender.com** |
+| API + health | **https://game-rental-api-znao.onrender.com** (`/health`) |
+| Database | Supabase PostgreSQL (Free), Europe |
+| Source | <https://github.com/ibrahim-kamil-ibrahim/game> |
+
+The API runs on Render Free, so the first request after 15 idle minutes may take about a minute while
+the instance wakes. Sessions and payments are stored in PostgreSQL and survive sleep/restarts; overdue
+sessions are reconciled on boot and before API requests. Deployment details, verified test results and
+remaining owner actions are in `docs/FINAL_DEPLOYMENT_REPORT.md`.
+
 ## Screenshots
 
 | Admin | Employer |

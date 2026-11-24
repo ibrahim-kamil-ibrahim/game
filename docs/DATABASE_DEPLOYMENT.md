@@ -8,6 +8,22 @@ This project uses Prisma with two connection URLs:
 Supabase Free provides a dedicated PostgreSQL database with 500 MB storage. It pauses after roughly a
 week of low activity and has **no automatic backups**; see `FREE_HOSTING_LIMITATIONS.md`.
 
+## 0. Deployed state (24 November 2026)
+
+| Item | Value |
+|---|---|
+| Project name / ref | `game-rental-production` / `jivzlczwlhzdwluokhuc` |
+| Plan / region | Free / Europe (`aws-0-eu-west-1` pooler) |
+| Runtime URL | transaction pooler `:6543`, `pgbouncer=true&connection_limit=1&sslmode=require` |
+| Migration URL | session pooler `:5432`, `pgbouncer=true&connection_limit=1&sslmode=require` |
+| Migrations | **3/3 applied** (`prisma migrate deploy`) |
+| Seed | **Applied once** — 1 admin user, 1 business, 0 sample machines/packages |
+| Direct host | IPv6-only (`db.<ref>.supabase.co` resolves to AAAA only), so it is not used |
+| Backups | None on Free — take manual dumps |
+
+`sslmode=require` is mandatory in practice. The pooler TCP ports answered while Prisma still returned
+`P1001`; adding `sslmode=require` made migrations succeed immediately.
+
 ## 1. Create the project
 
 1. Sign in at <https://supabase.com/dashboard> (account creation is a manual step).
@@ -43,8 +59,11 @@ If the direct host is IPv6-only and your migration environment has no IPv6, use 
 on port `5432` from the same dashboard panel:
 
 ```text
-postgresql://postgres.<PROJECT_REF>:<URL_ENCODED_PASSWORD>@aws-0-<REGION>.pooler.supabase.com:5432/postgres?sslmode=require
+postgresql://postgres.<PROJECT_REF>:<URL_ENCODED_PASSWORD>@aws-0-<REGION>.pooler.supabase.com:5432/postgres?pgbouncer=true&connection_limit=1&sslmode=require
 ```
+
+The deployed project uses the **session pooler** for `DIRECT_URL` for exactly this reason. Including
+`pgbouncer=true` on the session-pooler URL also keeps Prisma away from named prepared statements.
 
 Notes:
 
@@ -76,9 +95,10 @@ npm run start:deploy
 Enter `DATABASE_URL` and `DIRECT_URL` in Render's environment before the first deploy. This avoids
 copying the production password to a local machine.
 
-### Option B — From your machine
+### Option B — From your machine (used for this deployment)
 
-Create `backend/.env` with the Supabase URLs (the file is gitignored), then:
+Create `backend/.env` with the Supabase URLs (the file is gitignored), or set them as process
+environment variables, then:
 
 ```powershell
 cd backend
@@ -88,6 +108,9 @@ npx prisma migrate deploy
 
 `prisma migrate deploy` applies pending migrations only. **Never** run `prisma migrate reset` or
 `prisma db push` against production.
+
+This project used Option B (migrations and the one-time seed) and then disabled `RUN_DB_SEED` on Render,
+so routine boots only run the idempotent `prisma migrate deploy`.
 
 Migration history (3 migrations):
 
@@ -108,14 +131,15 @@ SEED_ADMIN_FULL_NAME=<owner name>
 SEED_SAMPLE_DATA=false
 ```
 
-First Render boot:
+First Render boot (alternative path):
 
 ```text
 RUN_DB_SEED=true
 ```
 
-After verifying the administrator can log in, set `RUN_DB_SEED=false` and redeploy. The seed does not
-overwrite an existing admin password.
+This deployment instead ran `npm run seed` once from the deployment machine against the Supabase URLs,
+then set `RUN_DB_SEED=false` on Render. After verifying the administrator can log in, keep
+`RUN_DB_SEED=false`. The seed does not overwrite an existing admin password.
 
 For a local one-time seed against Supabase:
 
@@ -172,6 +196,10 @@ npx prisma migrate status
 ```
 
 Expected: database schema is up to date.
+
+Observed on 24 November 2026: `prisma migrate deploy` reported **“All migrations have been successfully
+applied”** (3 migrations, no pending changes), and the idempotent seed created the business and the
+administrator. `/health` on Render now executes `SELECT 1` successfully.
 
 ## 6. Connection-pooling guidance
 

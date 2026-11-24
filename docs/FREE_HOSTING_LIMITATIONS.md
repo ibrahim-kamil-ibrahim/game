@@ -37,10 +37,10 @@ Source: <https://render.com/docs/free>, <https://render.com/pricing>
 
 ### Optional mitigation (not guaranteed)
 
-A free uptime monitor (for example cron-job.org) can request `https://<render-service>/health` every
-5–10 minutes to keep the service awake. This consumes the 750 free hours (a full month is ≈744 hours)
-and may still be interrupted by Render restarts. Do not treat it as an SLA. Do not configure it until
-you accept those terms.
+A free uptime monitor (for example cron-job.org) can request
+`https://game-rental-api-znao.onrender.com/health` every 5–10 minutes to keep the service awake. This
+consumes the 750 free hours (a full month is ≈744 hours) and may still be interrupted by Render
+restarts. Do not treat it as an SLA. Do not configure it until you accept those terms.
 
 ## 2. Supabase Free (PostgreSQL)
 
@@ -78,9 +78,18 @@ compliant production host** for it, even though the technical free limits are ge
 Vercel Hobby limits (technical, for reference): 100 GB fast data transfer, 1M function invocations,
 4 active CPU hours, 360 GB-hours provisioned memory per month.
 
+### Deployed alternative: Render Static Sites (free)
+
+Render Static Sites are free, support commercial projects, include 100 GB bandwidth/month, and are
+served from Render's global CDN with automatic HTTPS. This deployment uses them
+(`https://game-rental-admin.onrender.com`) so the admin host and API share one dashboard and one
+billing/limits page. They do **not** support server-side rewrites beyond the configured rules; the
+SPA fallback is handled by the static rewrite and `_redirects`. Like all free tiers, there is no SLA.
+
 ### Recommended genuinely free commercial alternative
 
-**Cloudflare Pages Free** is the best fit for this static Vite build:
+**Cloudflare Pages Free** is the best standalone fit for this static Vite build if you prefer a
+separate host:
 
 - Unlimited static requests and bandwidth, 500 builds/month, 20,000 files, 25 MiB per file.
 - Cloudflare's self-serve terms do not carry a non-commercial restriction; the main prohibition is
@@ -116,7 +125,7 @@ The repository includes:
 |---|---|---|
 | API | Render Free | sleeps, ~1 min wake, not production-grade |
 | Database | Supabase Free | 500 MB, pauses after a week of inactivity, no backups |
-| Admin static site | Cloudflare Pages Free (recommended) or Netlify Free | Vercel Hobby is non-commercial |
+| Admin static site | **Render Static Sites Free** (deployed), Cloudflare Pages Free, or Netlify Free | Vercel Hobby is non-commercial; free static hosts have no SLA |
 | Git | GitHub Free | — |
 | Timer reliability | Request-triggered reconciliation + boot scheduler; optional uptime ping | not exact during sleep |
 | Real-money production | Move API to a small always-on paid instance and enable Supabase backups | paid |

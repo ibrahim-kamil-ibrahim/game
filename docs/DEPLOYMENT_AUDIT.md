@@ -1,22 +1,27 @@
 # Deployment Audit
 
 **Project:** Game Rental Management System  
-**Audit date:** 23 November 2026  
-**Cloud deployment status:** Repository pushed to GitHub. Supabase/Render/static-host resources are
-**not yet created** because those services are not authenticated on this machine. No URLs or credentials
-are invented in this report.
+**Audit date:** 23 November 2026 · deployment completed 24 November 2026  
+**Cloud deployment status:** **LIVE on free tiers** — GitHub → Supabase → Render API → Render static admin.
+No URLs or credentials in this report are invented.
 
-GitHub repository: <https://github.com/ibrahim-kamil-ibrahim/game> (branch `main`, commit `39d5a8b`).
-The repository is currently public; switch it to private in GitHub settings if the source should not be
-public (no secrets are committed).
+| Item | Live value |
+|---|---|
+| GitHub | <https://github.com/ibrahim-kamil-ibrahim/game> (`main`) |
+| Database | Supabase Free, `game-rental-production`, Europe |
+| API | <https://game-rental-api-znao.onrender.com> |
+| Admin web | <https://game-rental-admin.onrender.com> |
+| Mobile | signed release build against the API URL (see `MOBILE_RELEASE_GUIDE.md`) |
 
 ## 1. Project and repository
 
 - Repository: <https://github.com/ibrahim-kamil-ibrahim/game>
 - Branch: `main`
-- Local deployment commit: `39d5a8b`
+- Deployment commits: `1ccf4c4` (initial), `640089d` (Render build fix), plus the documentation commit
 - The repository is currently public. No secrets, `.env` files, keystores, build outputs or
   `node_modules` are committed. If the source should be private, make it private in GitHub settings.
+- Netlify GitHub OAuth failed with `email_collision`; Cloudflare Pages was available but unnecessary
+  because Render Static Sites were used for the admin app. Vercel Hobby was rejected as non-compliant.
 
 ### Verified components
 
@@ -31,6 +36,17 @@ public (no secrets are committed).
 Local backend health response verified:
 `{"status":"ok", ...}`. The database currently has the seeded business, admin, demo employer, three
 machines, four packages and three categories; financial test data was removed.
+
+### Cloud verification (24 November 2026)
+
+| Component | Cloud result |
+|---|---|
+| Supabase | Project live; 3/3 migrations applied; seed applied once; `/health` `SELECT 1` passes |
+| Render API | `/health` **200**; 17/17 production smoke checks passed |
+| Admin static site | **200**; real browser login, dashboard data, refresh cookie and reload session verified |
+| CORS | Preflight from `https://game-rental-admin.onrender.com` allowed with credentials |
+| Cookies | `HttpOnly; Secure; SameSite=None` observed in the browser |
+| Mobile | Release APK/AAB rebuilt against the production HTTPS URL (see mobile guide) |
 
 ## 2. Runtime dependencies
 
@@ -84,18 +100,18 @@ Admin web:
 
 | Variable | Notes |
 |---|---|
-| `VITE_API_URL` | `https://<render-service>/api/v1` (or `/api/v1` with same-origin proxy) |
-| `VITE_SOCKET_URL` | `https://<render-service>` when the API is cross-origin |
+| `VITE_API_URL` | `https://game-rental-api-znao.onrender.com/api/v1` |
+| `VITE_SOCKET_URL` | `https://game-rental-api-znao.onrender.com` |
 
 Mobile: no runtime secrets. API URL is compiled with
-`--dart-define=API_BASE_URL=https://<render-service>/api/v1`.
+`--dart-define=API_BASE_URL=https://game-rental-api-znao.onrender.com/api/v1`.
 
 ## 5. Build and start commands (from actual package.json)
 
 Backend:
 
 ```text
-build:  npm ci && npx prisma generate && npm run build
+build:  npm ci --include=dev && npx prisma generate && npm run build
 start:  npm run start:deploy
         -> node scripts/start-production.cjs
         -> prisma migrate deploy
@@ -115,8 +131,8 @@ Mobile:
 
 ```powershell
 flutter pub get
-flutter build apk --release --dart-define=API_BASE_URL=https://<render-service>/api/v1
-flutter build appbundle --release --dart-define=API_BASE_URL=https://<render-service>/api/v1
+flutter build apk --release --dart-define=API_BASE_URL=https://game-rental-api-znao.onrender.com/api/v1
+flutter build appbundle --release --dart-define=API_BASE_URL=https://game-rental-api-znao.onrender.com/api/v1
 ```
 
 ## 6. API / security / realtime inventory
