@@ -13,7 +13,7 @@ successful deployment.
 
 | Item | Status |
 |---|---|
-| GitHub repository URL | **PENDING** — no remote/authentication |
+| GitHub repository URL | **https://github.com/ibrahim-kamil-ibrahim/game** — `main` pushed (`39d5a8b`) |
 | Supabase project / region | **PENDING** — account authorization required |
 | Render backend URL | **PENDING** — account authorization required |
 | Admin Web URL | **PENDING** — host choice + account authorization required |

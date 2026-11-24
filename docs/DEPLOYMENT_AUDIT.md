@@ -2,11 +2,23 @@
 
 **Project:** Game Rental Management System  
 **Audit date:** 23 November 2026  
-**Cloud deployment status:** Code and configuration prepared; cloud resources **not yet created** because
-Supabase/Render/Vercel/GitHub account authorization is required. No URLs or credentials are invented in
-this report.
+**Cloud deployment status:** Repository pushed to GitHub. Supabase/Render/static-host resources are
+**not yet created** because those services are not authenticated on this machine. No URLs or credentials
+are invented in this report.
 
-## 1. Existing architecture (verified)
+GitHub repository: <https://github.com/ibrahim-kamil-ibrahim/game> (branch `main`, commit `39d5a8b`).
+The repository is currently public; switch it to private in GitHub settings if the source should not be
+public (no secrets are committed).
+
+## 1. Project and repository
+
+- Repository: <https://github.com/ibrahim-kamil-ibrahim/game>
+- Branch: `main`
+- Local deployment commit: `39d5a8b`
+- The repository is currently public. No secrets, `.env` files, keystores, build outputs or
+  `node_modules` are committed. If the source should be private, make it private in GitHub settings.
+
+### Verified components
 
 | Component | Location | Technology | Local status |
 |---|---|---|---|
@@ -14,7 +26,7 @@ this report.
 | Admin web | `admin-web/` | React 19, Vite 8, TypeScript, Tailwind 4, TanStack Query | Running on `:5173`, production build passes |
 | Employer app | `employer-mobile/` | Flutter 3.47, Riverpod, GoRouter, Dio, Mobile Scanner | `flutter analyze` clean, 6 tests pass |
 | Database | local PostgreSQL 18 | Prisma migrations | 3 migrations applied |
-| Source control | none yet | Git | initialised locally during this audit (see Git section) |
+| Source control | GitHub | https://github.com/ibrahim-kamil-ibrahim/game | `main` pushed |
 
 Local backend health response verified:
 `{"status":"ok", ...}`. The database currently has the seeded business, admin, demo employer, three
