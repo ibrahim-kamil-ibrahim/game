@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -7,6 +7,7 @@ import { Modal } from './ui/Modal';
 import { Button } from './ui/Button';
 import { Field, Input, Select, Textarea } from './ui/Input';
 import { errorMessage } from '../lib/utils';
+import { suggestNextMachineCode } from '../lib/machineCode';
 
 const schema = z.object({
   name: z.string().trim().min(2, 'Machine name is required').max(120),
@@ -32,16 +33,23 @@ export function MachineFormModal({
   open,
   machine,
   categories,
+  existingCodes = [],
   onClose,
   onSubmit,
 }: {
   open: boolean;
   machine?: Machine | null;
   categories: Category[];
+  existingCodes?: string[];
   onClose: () => void;
   onSubmit: (values: MachineFormValues) => Promise<unknown>;
 }) {
   const [serverError, setServerError] = useState<string | null>(null);
+
+  const suggestedCode = useMemo(
+    () => suggestNextMachineCode(existingCodes),
+    [existingCodes],
+  );
 
   const {
     register,
@@ -58,7 +66,7 @@ export function MachineFormModal({
     setServerError(null);
     reset({
       name: machine?.name ?? '',
-      code: machine?.code ?? '',
+      code: machine?.code ?? suggestedCode,
       categoryId: machine?.category?.id ?? '',
       brand: machine?.brand ?? '',
       model: machine?.model ?? '',
@@ -68,7 +76,7 @@ export function MachineFormModal({
       description: machine?.description ?? '',
       status: (machine?.status === 'IN_USE' ? 'AVAILABLE' : machine?.status) ?? 'AVAILABLE',
     });
-  }, [open, machine, reset]);
+  }, [open, machine, reset, suggestedCode]);
 
   const submit = async (values: MachineFormValues) => {
     setServerError(null);
@@ -126,7 +134,7 @@ export function MachineFormModal({
             label="Machine code"
             htmlFor="code"
             error={errors.code?.message}
-            hint="Short unique internal code, e.g. PS5-01"
+            hint={machine ? 'Short unique internal code, e.g. PS5-01' : 'Auto-suggested next code; you can change it'}
             required
           >
             <Input

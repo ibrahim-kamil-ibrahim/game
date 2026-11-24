@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import {
   createMachine,
   deleteMachine,
+  listAllMachineCodes,
   listMachines,
   setMachineStatus,
   updateMachine,
@@ -73,6 +74,12 @@ export function MachinesPage() {
         page,
         pageSize: 15,
       }),
+  });
+
+  const machineCodesQuery = useQuery({
+    queryKey: ['machines', 'codes'],
+    queryFn: listAllMachineCodes,
+    staleTime: 60_000,
   });
 
   const stats = useMemo(() => {
@@ -394,6 +401,7 @@ export function MachinesPage() {
         open={formOpen}
         machine={editing}
         categories={categoriesQuery.data ?? []}
+        existingCodes={machineCodesQuery.data ?? []}
         onClose={() => {
           setFormOpen(false);
           setEditing(null);

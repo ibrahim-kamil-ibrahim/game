@@ -19,6 +19,22 @@ export async function listMachines(params: MachineListParams = {}): Promise<Mach
   return { items: response.data.data, meta: response.data.meta };
 }
 
+/** All machine codes, used to suggest the next free code in the register form. */
+export async function listAllMachineCodes(): Promise<string[]> {
+  const codes: string[] = [];
+  let page = 1;
+  let totalPages = 1;
+
+  do {
+    const result = await listMachines({ page, pageSize: 100 });
+    codes.push(...result.items.map((machine) => machine.code));
+    totalPages = result.meta?.totalPages ?? 1;
+    page += 1;
+  } while (page <= totalPages);
+
+  return codes;
+}
+
 export async function getMachine(id: string): Promise<{
   machine: Machine;
   packages: Array<{
