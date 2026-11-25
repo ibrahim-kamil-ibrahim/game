@@ -47,6 +47,8 @@ export function MachinesPage() {
   const [editing, setEditing] = useState<Machine | null>(null);
   const [qrMachine, setQrMachine] = useState<Machine | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Machine | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   useEffect(() => {
     setPage(1);
@@ -148,8 +150,57 @@ export function MachinesPage() {
     onError: (error) => toast.error(errorMessage(error)),
   });
 
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const results = await Promise.allSettled(ids.map((id) => deleteMachine(id)));
+      const failures = results
+        .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+        .map((result) => errorMessage(result.reason));
+      return { deleted: results.length - failures.length, failures };
+    },
+    onSuccess: ({ deleted, failures }) => {
+      if (deleted > 0) {
+        toast.success(`${deleted} machine${deleted === 1 ? '' : 's'} removed`);
+      }
+      if (failures.length > 0) {
+        toast.error(
+          `${failures.length} machine${failures.length === 1 ? '' : 's'} could not be removed: ${failures[0]}`,
+        );
+      }
+      setBulkDeleteOpen(false);
+      setSelectedIds(new Set());
+      invalidate();
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+
   const machines = machinesQuery.data?.items ?? [];
   const meta = machinesQuery.data?.meta;
+  const selectableMachines = machines.filter((machine) => !machine.activeSession);
+  const allSelected =
+    selectableMachines.length > 0 &&
+    selectableMachines.every((machine) => selectedIds.has(machine.id));
+  const someSelected =
+    !allSelected && selectableMachines.some((machine) => selectedIds.has(machine.id));
+
+  const toggleMachine = (id: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    setSelectedIds(
+      allSelected ? new Set() : new Set(selectableMachines.map((machine) => machine.id)),
+    );
+  };
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [debouncedSearch, status, categoryId, page]);
 
   return (
     <div className="space-y-6">
@@ -223,11 +274,23 @@ export function MachinesPage() {
               ))}
             </Select>
           </div>
-          <p className="text-xs text-navy-500">{meta ? `${meta.total} machines` : '—'}</p>
+          <div className="flex items-center gap-3">
+            {selectedIds.size > 0 ? (
+              <Button
+                variant="danger"
+                size="sm"
+                icon={<Trash2 className="h-4 w-4" />}
+                onClick={() => setBulkDeleteOpen(true)}
+              >
+                Delete selected ({selectedIds.size})
+              </Button>
+            ) : null}
+            <p className="text-xs text-navy-500">{meta ? `${meta.total} machines` : '—'}</p>
+          </div>
         </div>
 
         {machinesQuery.isLoading ? (
-          <TableSkeleton columns={6} />
+          <TableSkeleton columns={7} />
         ) : machinesQuery.isError ? (
           <ErrorState message={errorMessage(machinesQuery.error)} onRetry={() => void machinesQuery.refetch()} />
         ) : machines.length === 0 ? (
@@ -257,6 +320,18 @@ export function MachinesPage() {
             <table className="w-full min-w-[980px]">
               <thead className="bg-navy-50/80">
                 <tr>
+                  <th className="th w-10">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all machines on this page"
+                      className="h-4 w-4 rounded border-navy-300 text-brand-600 focus:ring-brand-500"
+                      checked={allSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = someSelected;
+                      }}
+                      onChange={toggleAll}
+                    />
+                  </th>
                   <th className="th">Machine</th>
                   <th className="th">Category</th>
                   <th className="th">Status</th>
@@ -269,6 +344,21 @@ export function MachinesPage() {
               <tbody className="divide-y divide-navy-100">
                 {machines.map((machine) => (
                   <tr key={machine.id} className="group hover:bg-navy-50/50">
+                    <td className="td">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${machine.code}`}
+                        className="h-4 w-4 rounded border-navy-300 text-brand-600 focus:ring-brand-500 disabled:opacity-40"
+                        checked={selectedIds.has(machine.id)}
+                        disabled={!!machine.activeSession}
+                        title={
+                          machine.activeSession
+                            ? 'Cannot delete while a session is active'
+                            : `Select ${machine.code}`
+                        }
+                        onChange={() => toggleMachine(machine.id)}
+                      />
+                    </td>
                     <td className="td">
                       <Link to={`/machines/${machine.id}`} className="flex items-center gap-3">
                         <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-navy-100 text-navy-600">
@@ -425,6 +515,16 @@ export function MachinesPage() {
         loading={deleteMutation.isPending}
         onClose={() => setDeleteTarget(null)}
         onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+      />
+
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        title={`Remove ${selectedIds.size} machine${selectedIds.size === 1 ? '' : 's'}?`}
+        description="Each machine will be deactivated and its QR code revoked. Machines with an active session are skipped. Historical sessions and payments are preserved. This cannot be undone."
+        confirmLabel={`Remove ${selectedIds.size} machine${selectedIds.size === 1 ? '' : 's'}`}
+        loading={bulkDeleteMutation.isPending}
+        onClose={() => setBulkDeleteOpen(false)}
+        onConfirm={() => bulkDeleteMutation.mutate([...selectedIds])}
       />
 
       <div className="flex items-center gap-2 rounded-lg bg-navy-100/60 px-4 py-3 text-xs text-navy-600">
