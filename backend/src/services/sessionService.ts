@@ -6,6 +6,7 @@ import { emitToAdmins, emitToBusiness, emitToUser } from '../sockets';
 import { createNotification } from './notificationService';
 import { recordAudit } from './auditService';
 import { requireApplicablePackage } from './packageService';
+import { requireValidMachineQr } from './qrService';
 import { transactionReference } from '../utils/money';
 import { newUuid } from '../utils/auth';
 
@@ -112,6 +113,7 @@ export interface StartSessionInput {
   businessId: string;
   actor: Actor;
   paymentId: string;
+  qrToken?: string;
 }
 
 type StartOutcome =
@@ -169,6 +171,10 @@ export async function startSession(input: StartSessionInput): Promise<SessionWit
       include: sessionInclude,
     });
     if (existing) return { kind: 'ok', session: existing, created: false } as StartOutcome;
+
+    if (input.actor.role === 'EMPLOYER') {
+      await requireValidMachineQr(tx, payment.machineId, input.qrToken);
+    }
 
     const machines = await tx.$queryRaw<
       Array<{ id: string; status: string; name: string; deletedAt: Date | null }>
@@ -341,6 +347,7 @@ export interface EndSessionInput {
   sessionId: string;
   reason?: string;
   cancelled?: boolean;
+  qrToken?: string;
 }
 
 export async function endSession(input: EndSessionInput): Promise<SessionWithRelations> {
@@ -357,13 +364,17 @@ export async function endSession(input: EndSessionInput): Promise<SessionWithRel
         startedAt: Date | null;
         endsAt: Date | null;
         pausedAt: Date | null;
+        actualEndedAt: Date | null;
+        actualDurationSeconds: number | null;
+        endedById: string | null;
         totalPausedSeconds: number;
         packageNameSnapshot: string;
         machineName: string;
       }>
     >(Prisma.sql`
       SELECT s.id, s."businessId", s."employerId", s."machineId", s.status, s."startedAt", s."endsAt",
-             s."pausedAt", s."totalPausedSeconds", s."packageNameSnapshot", m.name AS "machineName"
+             s."pausedAt", s."actualEndedAt", s."actualDurationSeconds", s."endedById",
+             s."totalPausedSeconds", s."packageNameSnapshot", m.name AS "machineName"
       FROM "GameSession" s JOIN "GameMachine" m ON m.id = s."machineId"
       WHERE s.id = ${input.sessionId}::uuid FOR UPDATE OF s
     `);
@@ -375,7 +386,8 @@ export async function endSession(input: EndSessionInput): Promise<SessionWithRel
     if (input.actor.role !== 'ADMIN' && session.employerId !== input.actor.id) {
       throw AppError.forbidden('You can only end your own sessions');
     }
-    if (!['ACTIVE', 'PAUSED'].includes(session.status)) {
+    const isExpiredAwaitingQr = session.status === 'EXPIRED' && !session.endedById;
+    if (!['ACTIVE', 'PAUSED'].includes(session.status) && !isExpiredAwaitingQr) {
       throw AppError.conflict('This session is not active', 'SESSION_NOT_ACTIVE', {
         status: session.status,
       });
@@ -385,33 +397,38 @@ export async function endSession(input: EndSessionInput): Promise<SessionWithRel
       where: { businessId: input.businessId },
     });
 
-    if (!input.cancelled && input.actor.role !== 'ADMIN' && !settings?.allowManualEnd) {
+    if (!input.cancelled && !isExpiredAwaitingQr && input.actor.role !== 'ADMIN' && !settings?.allowManualEnd) {
       throw AppError.forbidden(
         'Manual ending is disabled. The session will end automatically when the timer expires.',
         'MANUAL_END_DISABLED',
       );
     }
-    if (!input.cancelled && settings?.requireEndReason && !input.reason?.trim()) {
+    if (!input.cancelled && !isExpiredAwaitingQr && settings?.requireEndReason && !input.reason?.trim()) {
       throw AppError.badRequest('A reason is required when ending a session', undefined, 'REASON_REQUIRED');
+    }
+    if (!input.cancelled && input.actor.role === 'EMPLOYER') {
+      await requireValidMachineQr(tx, session.machineId, input.qrToken);
     }
 
     const pausedExtraMs = session.pausedAt ? now.getTime() - session.pausedAt.getTime() : 0;
     const startedMs = session.startedAt ? session.startedAt.getTime() : now.getTime();
-    const actualDurationSeconds = Math.max(
-      0,
-      Math.floor((now.getTime() - startedMs - session.totalPausedSeconds * 1000 - pausedExtraMs) / 1000),
-    );
+    const actualDurationSeconds = isExpiredAwaitingQr
+      ? session.actualDurationSeconds
+      : Math.max(
+          0,
+          Math.floor((now.getTime() - startedMs - session.totalPausedSeconds * 1000 - pausedExtraMs) / 1000),
+        );
 
     const updated = await tx.gameSession.update({
       where: { id: session.id },
       data: {
         status: input.cancelled ? 'CANCELLED' : 'COMPLETED',
-        actualEndedAt: now,
+        actualEndedAt: isExpiredAwaitingQr ? (session.actualEndedAt ?? now) : now,
         actualDurationSeconds,
         pausedAt: null,
         endedById: input.actor.id,
         endedByRole: input.actor.role,
-        endReason: input.reason?.trim() || null,
+        endReason: input.reason?.trim() || (isExpiredAwaitingQr ? 'Time expired' : null),
         events: {
           create: {
             type: input.cancelled ? 'CANCELLED' : 'ENDED_MANUAL',

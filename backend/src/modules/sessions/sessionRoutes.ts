@@ -22,6 +22,7 @@ router.use(authenticate);
 
 const startSchema = z.object({
   paymentId: z.string().uuid('A valid payment is required'),
+  qrToken: z.string().trim().min(8).max(500).optional(),
 });
 
 const listQuerySchema = paginationSchema.extend({
@@ -35,6 +36,7 @@ const listQuerySchema = paginationSchema.extend({
 
 const endSchema = z.object({
   reason: z.string().trim().max(500).optional(),
+  qrToken: z.string().trim().min(8).max(500).optional(),
 });
 
 const extendSchema = z.object({
@@ -50,6 +52,7 @@ router.post(
       businessId: req.user!.businessId,
       actor: { id: req.user!.id, role: req.user!.role },
       paymentId: req.body.paymentId,
+      qrToken: req.body.qrToken,
     });
     res.status(201).json({
       success: true,
@@ -65,7 +68,7 @@ router.get(
     const sessions = await prisma.gameSession.findMany({
       where: {
         businessId: req.user!.businessId,
-        status: { in: ['ACTIVE', 'PAUSED'] },
+        OR: [{ status: { in: ['ACTIVE', 'PAUSED'] } }, { status: 'EXPIRED', endedById: null }],
         ...(req.user!.role === 'EMPLOYER' ? { employerId: req.user!.id } : {}),
       },
       include: sessionInclude,
@@ -181,6 +184,7 @@ router.post(
       actor: { id: req.user!.id, role: req.user!.role },
       sessionId: req.params.id,
       reason: req.body.reason,
+      qrToken: req.body.qrToken,
     });
     res.json({ success: true, data: presentSession(session) });
   }),

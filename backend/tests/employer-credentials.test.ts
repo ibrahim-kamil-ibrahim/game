@@ -45,15 +45,16 @@ describe('Employer credential provisioning', () => {
       .send({ username, password: tempPassword });
     expect(login.status).toBe(200);
 
-    // Once the employer signs in, the reversible copy is destroyed.
+    // The employer's credentials remain readable and copyable by the admin
+    // even after sign-in.
     const afterLogin = await api
       .get(`/api/v1/admin/employers/${created.body.data.id}`)
       .set(auth(ctx.adminToken));
-    expect(afterLogin.body.data.credentials.temporaryPassword).toBeNull();
-    expect(afterLogin.body.data.credentials.setAt).toBeNull();
+    expect(afterLogin.body.data.credentials.temporaryPassword).toBe(tempPassword);
+    expect(afterLogin.body.data.credentials.setAt).toBeTruthy();
 
     const stored = await prisma.user.findUniqueOrThrow({ where: { id: created.body.data.id } });
-    expect(stored.initialPasswordEncrypted).toBeNull();
+    expect(stored.initialPasswordEncrypted).toBeTruthy();
     expect(stored.passwordHash).not.toBe(tempPassword);
     expect(stored.passwordHash.startsWith('$2')).toBe(true);
   });
@@ -92,7 +93,7 @@ describe('Employer credential provisioning', () => {
     const detail = await api
       .get(`/api/v1/admin/employers/${created.body.data.id}`)
       .set(auth(ctx.adminToken));
-    expect(detail.body.data.credentials.temporaryPassword).toBeNull();
+    expect(detail.body.data.credentials.temporaryPassword).toBe(newPassword);
   });
 
   it('keeps explicit usernames/passwords for API compatibility and rejects duplicates', async () => {
@@ -120,5 +121,25 @@ describe('Employer credential provisioning', () => {
       .set('x-client-type', 'mobile')
       .send({ username: 'explicit.user', password: 'Explicit@12345' });
     expect(login.status).toBe(200);
+  });
+
+  it('soft-deletes an employer and blocks further logins', async () => {
+    const created = await api
+      .post('/api/v1/admin/employers')
+      .set(auth(ctx.adminToken))
+      .send({ fullName: 'Delete Me' });
+    expect(created.status).toBe(201);
+
+    const deleted = await api
+      .delete(`/api/v1/admin/employers/${created.body.data.id}`)
+      .set(auth(ctx.adminToken));
+    expect(deleted.status).toBe(200);
+    expect(deleted.body.data.deleted).toBe(true);
+
+    const login = await api
+      .post('/api/v1/auth/login')
+      .set('x-client-type', 'mobile')
+      .send({ username: created.body.data.username, password: created.body.data.temporaryPassword });
+    expect(login.status).toBe(401);
   });
 });

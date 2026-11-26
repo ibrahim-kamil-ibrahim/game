@@ -22,7 +22,7 @@ beforeAll(async () => {
 describe('Concurrent session protection', () => {
   it('allows only one of two simultaneous starts on the same machine', async () => {
     const second = await createEmployerAccount(ctx.businessId, 'race-employer');
-    const { machine } = await createMachineWithQr(ctx.businessId, { code: 'RACE-1' });
+    const { machine, qrPayload } = await createMachineWithQr(ctx.businessId, { code: 'RACE-1' });
     const pkg = await createPackage(ctx.businessId, { durationMinutes: 15, priceSantim: 3000 });
 
     const paymentA = await cashPayment(ctx.employerToken, machine.id, pkg.id, 'race-payment-a');
@@ -31,8 +31,8 @@ describe('Concurrent session protection', () => {
     expect(paymentB.status).toBe(201);
 
     const [startA, startB] = await Promise.all([
-      api.post('/api/v1/sessions/start').set(auth(ctx.employerToken)).send({ paymentId: paymentA.body.data.id }),
-      api.post('/api/v1/sessions/start').set(auth(second.token)).send({ paymentId: paymentB.body.data.id }),
+      api.post('/api/v1/sessions/start').set(auth(ctx.employerToken)).send({ paymentId: paymentA.body.data.id, qrToken: qrPayload }),
+      api.post('/api/v1/sessions/start').set(auth(second.token)).send({ paymentId: paymentB.body.data.id, qrToken: qrPayload }),
     ]);
 
     const statuses = [startA.status, startB.status].sort();
@@ -53,13 +53,13 @@ describe('Concurrent session protection', () => {
   });
 
   it('returns the same session for parallel retries of the same payment', async () => {
-    const { machine } = await createMachineWithQr(ctx.businessId, { code: 'RACE-2' });
+    const { machine, qrPayload } = await createMachineWithQr(ctx.businessId, { code: 'RACE-2' });
     const pkg = await createPackage(ctx.businessId);
     const payment = await cashPayment(ctx.employerToken, machine.id, pkg.id);
 
     const [first, second] = await Promise.all([
-      api.post('/api/v1/sessions/start').set(auth(ctx.employerToken)).send({ paymentId: payment.body.data.id }),
-      api.post('/api/v1/sessions/start').set(auth(ctx.employerToken)).send({ paymentId: payment.body.data.id }),
+      api.post('/api/v1/sessions/start').set(auth(ctx.employerToken)).send({ paymentId: payment.body.data.id, qrToken: qrPayload }),
+      api.post('/api/v1/sessions/start').set(auth(ctx.employerToken)).send({ paymentId: payment.body.data.id, qrToken: qrPayload }),
     ]);
 
     expect([first.status, second.status].sort()).toEqual([201, 201]);
@@ -70,13 +70,13 @@ describe('Concurrent session protection', () => {
   });
 
   it('enforces the database partial unique index independently of application logic', async () => {
-    const { machine } = await createMachineWithQr(ctx.businessId, { code: 'RACE-3' });
+    const { machine, qrPayload } = await createMachineWithQr(ctx.businessId, { code: 'RACE-3' });
     const pkg = await createPackage(ctx.businessId);
     const paymentA = await cashPayment(ctx.employerToken, machine.id, pkg.id);
     const started = await api
       .post('/api/v1/sessions/start')
       .set(auth(ctx.employerToken))
-      .send({ paymentId: paymentA.body.data.id });
+      .send({ paymentId: paymentA.body.data.id, qrToken: qrPayload });
     expect(started.status).toBe(201);
 
     // Attempting to insert a second active session directly must fail at the DB

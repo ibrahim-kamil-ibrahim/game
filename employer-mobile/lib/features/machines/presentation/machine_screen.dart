@@ -44,8 +44,10 @@ class _MachineScreenState extends ConsumerState<MachineScreen> {
 
     final machine = data.machine;
     final packages = data.packages;
+    final qrToken = widget.resolved?.qrToken;
+    final hasQr = qrToken != null && qrToken.isNotEmpty;
     final selected = _selected ?? (packages.isNotEmpty ? packages.first : null);
-    final canRent = machine.isAvailable && packages.isNotEmpty;
+    final canRent = machine.isAvailable && packages.isNotEmpty && hasQr;
 
     return Scaffold(
       appBar: AppBar(
@@ -83,6 +85,15 @@ class _MachineScreenState extends ConsumerState<MachineScreen> {
                   ? 'Under maintenance'
                   : 'Machine unavailable',
               message: 'This machine cannot be rented right now. Ask your administrator for details.',
+            ),
+            const SizedBox(height: 14),
+          ] else if (!hasQr) ...[
+            _NoticeBanner(
+              icon: Icons.qr_code_scanner,
+              color: AppColors.brand,
+              title: 'QR scan required',
+              message:
+                  'Scan the QR code on this machine to confirm you are at the machine before starting a rental.',
             ),
             const SizedBox(height: 14),
           ],
@@ -194,12 +205,28 @@ class _MachineScreenState extends ConsumerState<MachineScreen> {
                           extra: PaymentDraft(
                             machine: machine,
                             package: selected,
+                            qrToken: qrToken,
                           ),
                         ),
                         child: const Text('Confirm cash'),
                       ),
                     ),
                   ],
+                ),
+              ),
+            )
+          : machine.isAvailable && !hasQr
+          ? SafeArea(
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                decoration: const BoxDecoration(
+                  color: AppColors.surface,
+                  border: Border(top: BorderSide(color: AppColors.navy100)),
+                ),
+                child: PrimaryButton(
+                  label: 'Scan machine QR to rent',
+                  icon: Icons.qr_code_scanner,
+                  onPressed: () => context.push('/scan'),
                 ),
               ),
             )

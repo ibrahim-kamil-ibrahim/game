@@ -11,6 +11,7 @@ import {
   verifyPassword,
 } from '../../utils/auth';
 import { recordAudit, requestMeta } from '../../services/auditService';
+import { encryptSecret } from '../../utils/crypto';
 import { logger } from '../../utils/logger';
 import type { Request } from 'express';
 
@@ -135,11 +136,6 @@ export async function login(
     where: { id: user.id },
     data: {
       lastLoginAt: new Date(),
-      // The admin can view/copy the temporary password until the employer
-      // signs in for the first time. After that only the hash remains.
-      ...(user.role === 'EMPLOYER'
-        ? { initialPasswordEncrypted: null, initialPasswordSetAt: null }
-        : {}),
     },
   });
 
@@ -335,8 +331,15 @@ export async function changeOwnPassword(
       where: { id: userId },
       data: {
         passwordHash,
-        initialPasswordEncrypted: null,
-        initialPasswordSetAt: null,
+        ...(user.role === 'EMPLOYER'
+          ? {
+              initialPasswordEncrypted: encryptSecret(newPassword),
+              initialPasswordSetAt: new Date(),
+            }
+          : {
+              initialPasswordEncrypted: null,
+              initialPasswordSetAt: null,
+            }),
       },
     }),
     prisma.refreshToken.updateMany({

@@ -90,7 +90,7 @@ class _SessionsScreenState extends ConsumerState<SessionsScreen>
                 children: [
                   const EmptyView(
                     title: 'No active sessions',
-                    description: 'Start a rental by scanning a machine QR code or choosing a machine from the floor.',
+                    description: 'Start a rental by scanning a machine QR code.',
                     icon: Icons.timer_off_outlined,
                   ),
                   const SizedBox(height: 8),

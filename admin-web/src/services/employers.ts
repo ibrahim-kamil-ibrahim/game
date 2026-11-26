@@ -46,6 +46,11 @@ export async function setEmployerStatus(id: string, status: UserStatus): Promise
   return response.data.data;
 }
 
+export async function deleteEmployer(id: string): Promise<{ deleted: boolean }> {
+  const response = await api.delete(`/admin/employers/${id}`);
+  return response.data.data;
+}
+
 export async function resetEmployerPassword(
   id: string,
   newPassword?: string,

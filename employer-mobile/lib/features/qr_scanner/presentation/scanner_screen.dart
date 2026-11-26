@@ -7,10 +7,20 @@ import '../../../core/network/api_exception.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/common.dart';
 import '../../dashboard/providers/dashboard_providers.dart';
-import '../../machines/models/machine.dart';
 
 class ScannerScreen extends ConsumerStatefulWidget {
-  const ScannerScreen({super.key});
+  const ScannerScreen({
+    super.key,
+    this.verifyMachineId,
+    this.verifyMachineName,
+  });
+
+  /// When set, the scanner only captures and returns the scanned QR payload
+  /// so the caller (e.g. ending a session) can submit it for verification.
+  final String? verifyMachineId;
+  final String? verifyMachineName;
+
+  bool get isVerifyMode => verifyMachineId != null;
 
   @override
   ConsumerState<ScannerScreen> createState() => _ScannerScreenState();
@@ -49,6 +59,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       await _controller.stop();
     } catch (_) {}
 
+    if (widget.isVerifyMode) {
+      if (!mounted) return;
+      context.pop<String>(raw);
+      return;
+    }
+
     try {
       final resolved = await ref
           .read(employerRepositoryProvider)
@@ -73,7 +89,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   }
 
   Future<void> _showError(ApiException error) async {
-    final action = await showModalBottomSheet<String>(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (sheetContext) {
@@ -144,13 +160,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                 PrimaryButton(
                   label: 'Try scanning again',
                   icon: Icons.qr_code_scanner,
-                  onPressed: () => Navigator.of(sheetContext).pop('retry'),
-                ),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: () => Navigator.of(sheetContext).pop('pick'),
-                  icon: const Icon(Icons.grid_view, size: 18),
-                  label: const Text('Choose a machine from the list'),
+                  onPressed: () => Navigator.of(sheetContext).pop(),
                 ),
               ],
             ),
@@ -158,141 +168,21 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
         );
       },
     );
-
-    if (!mounted) return;
-    if (action == 'pick') {
-      await _pickMachine();
-    }
-  }
-
-  Future<void> _pickMachine() async {
-    final selected = await showModalBottomSheet<MachineModel>(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheetContext) {
-        return Consumer(
-          builder: (context, ref, _) {
-            final dashboard = ref.watch(dashboardProvider);
-            final machines =
-                dashboard.value?.machineList ?? const <MachineModel>[];
-            final available = machines
-                .where((machine) => machine.isAvailable)
-                .toList();
-            return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Choose an available machine',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.navy,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Use this if the QR sticker is damaged. The server still verifies availability and pricing.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                        height: 1.4,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    if (dashboard.isLoading)
-                      const LoadingView(label: 'Loading machines')
-                    else if (available.isEmpty)
-                      const EmptyView(
-                        title: 'No available machines',
-                        description: 'All machines are in use, under maintenance or inactive.',
-                        icon: Icons.sports_esports_outlined,
-                      )
-                    else
-                      Flexible(
-                        child: ListView.separated(
-                          shrinkWrap: true,
-                          itemCount: available.length,
-                          separatorBuilder: (_, _) => const SizedBox(height: 6),
-                          itemBuilder: (context, index) {
-                            final machine = available[index];
-                            return AppCard(
-                              onTap: () =>
-                                  Navigator.of(sheetContext).pop(machine),
-                              padding: const EdgeInsets.all(12),
-                              child: Row(
-                                children: [
-                                  MachineImage(
-                                    imageUrl: machine.imageUrl,
-                                    size: 40,
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          machine.name,
-                                          style: const TextStyle(
-                                            fontSize: 13.5,
-                                            fontWeight: FontWeight.w700,
-                                            color: AppColors.navy,
-                                          ),
-                                        ),
-                                        Text(
-                                          '${machine.code}${machine.categoryName != null ? ' • ${machine.categoryName}' : ''}',
-                                          style: const TextStyle(
-                                            fontSize: 11,
-                                            color: AppColors.textSecondary,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  StatusBadge.machine(machine.status),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-
-    if (selected == null || !mounted) return;
-    setState(() => _processing = true);
-    try {
-      await _controller.stop();
-    } catch (_) {}
-    if (!mounted) return;
-    await context.push('/machine/${selected.id}');
-    if (!mounted) return;
-    setState(() => _processing = false);
-    try {
-      await _controller.start();
-    } catch (_) {}
   }
 
   @override
   Widget build(BuildContext context) {
+    final verifyMode = widget.isVerifyMode;
+    final machineLabel = widget.verifyMachineName ?? 'the machine';
+
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: const Text(
-          'Scan machine QR',
-          style: TextStyle(color: Colors.white),
+        title: Text(
+          verifyMode ? 'Scan QR to end session' : 'Scan machine QR',
+          style: const TextStyle(color: Colors.white),
         ),
         actions: [
           IconButton(
@@ -315,10 +205,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
             controller: _controller,
             onDetect: _onDetect,
             errorBuilder: (context, error) {
-              return _CameraError(
-                message: error.errorCode.name,
-                onPickMachine: _pickMachine,
-              );
+              return _CameraError(message: error.errorCode.name);
             },
           ),
           IgnorePointer(
@@ -342,12 +229,14 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
             child: Column(
               children: [
                 const SizedBox(height: 12),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 24),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Text(
-                    'Point the camera at the QR code on the machine',
+                    verifyMode
+                        ? 'Scan the QR code on $machineLabel to confirm ending this session'
+                        : 'Point the camera at the QR code on the machine',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 13.5,
                       fontWeight: FontWeight.w600,
@@ -418,56 +307,38 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                 const Spacer(),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
-                  child: Column(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.lock_outline,
+                          size: 14,
+                          color: Colors.white70,
                         ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.55),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.lock_outline,
-                              size: 14,
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            verifyMode
+                                ? 'Scanning the machine QR code is required to end the session.'
+                                : 'Scanning the machine QR code is required before any session can start.',
+                            style: const TextStyle(
                               color: Colors.white70,
-                            ),
-                            SizedBox(width: 6),
-                            Flexible(
-                              child: Text(
-                                'The server verifies the machine, status and package before any session starts.',
-                                style: TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 10.5,
-                                  height: 1.35,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            side: const BorderSide(color: Colors.white38),
-                            backgroundColor: Colors.black.withValues(
-                              alpha: 0.35,
+                              fontSize: 10.5,
+                              height: 1.35,
                             ),
                           ),
-                          onPressed: _processing ? null : _pickMachine,
-                          icon: const Icon(Icons.grid_view, size: 18),
-                          label: const Text('QR damaged? Choose a machine'),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -497,10 +368,9 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
 }
 
 class _CameraError extends StatelessWidget {
-  const _CameraError({required this.message, required this.onPickMachine});
+  const _CameraError({required this.message});
 
   final String message;
-  final VoidCallback onPickMachine;
 
   @override
   Widget build(BuildContext context) {
@@ -526,20 +396,13 @@ class _CameraError extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Allow camera access in your phone settings, then try again. You can still choose a machine manually. ($message)',
+            'Camera access is required to scan the machine QR code. Allow camera access in your phone settings and try again. ($message)',
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: Colors.white70,
               fontSize: 12.5,
               height: 1.5,
             ),
-          ),
-          const SizedBox(height: 20),
-          OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
-            onPressed: onPickMachine,
-            icon: const Icon(Icons.grid_view, size: 18),
-            label: const Text('Choose a machine'),
           ),
         ],
       ),

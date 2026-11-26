@@ -118,12 +118,15 @@ class _SessionCountdownState extends State<SessionCountdown> {
         widget.session.status == 'COMPLETED' ||
         widget.session.status == 'EXPIRED' ||
         widget.session.status == 'CANCELLED';
-    final urgent = !finished && _remaining <= 60;
+    final expiredAwaitingQr =
+        widget.session.isExpired ||
+        (widget.session.isActive && _remaining == 0);
+    final urgent = (!finished && _remaining <= 60) || expiredAwaitingQr;
     final warning = !finished && _remaining <= 300 && !urgent;
-    final color = finished
-        ? null
-        : urgent
+    final color = urgent
         ? const Color(0xFFDC2626)
+        : finished
+        ? null
         : warning
         ? const Color(0xFFD97706)
         : null;
@@ -156,7 +159,9 @@ class _SessionCountdownState extends State<SessionCountdown> {
         ),
         if (!widget.compact)
           Text(
-            finished
+            expiredAwaitingQr
+                ? 'Time expired — scan QR to end'
+                : finished
                 ? 'Session ended'
                 : urgent
                 ? 'Time is almost up'

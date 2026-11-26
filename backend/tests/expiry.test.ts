@@ -22,13 +22,13 @@ beforeAll(async () => {
 
 describe('Server-side session expiration', () => {
   it('expires sessions whose end time has passed and releases the machine', async () => {
-    const { machine } = await createMachineWithQr(ctx.businessId, { code: 'EXP-1' });
+    const { machine, qrPayload } = await createMachineWithQr(ctx.businessId, { code: 'EXP-1' });
     const pkg = await createPackage(ctx.businessId, { durationMinutes: 30, priceSantim: 5000 });
     const payment = await cashPayment(ctx.employerToken, machine.id, pkg.id);
     const started = await api
       .post('/api/v1/sessions/start')
       .set(auth(ctx.employerToken))
-      .send({ paymentId: payment.body.data.id });
+      .send({ paymentId: payment.body.data.id, qrToken: qrPayload });
     expect(started.status).toBe(201);
     const sessionId = started.body.data.session.id as string;
 
@@ -68,13 +68,13 @@ describe('Server-side session expiration', () => {
   });
 
   it('is idempotent when the expiry worker runs repeatedly', async () => {
-    const { machine } = await createMachineWithQr(ctx.businessId, { code: 'EXP-2' });
+    const { machine, qrPayload } = await createMachineWithQr(ctx.businessId, { code: 'EXP-2' });
     const pkg = await createPackage(ctx.businessId);
     const payment = await cashPayment(ctx.employerToken, machine.id, pkg.id);
     const started = await api
       .post('/api/v1/sessions/start')
       .set(auth(ctx.employerToken))
-      .send({ paymentId: payment.body.data.id });
+      .send({ paymentId: payment.body.data.id, qrToken: qrPayload });
     const sessionId = started.body.data.session.id as string;
 
     await prisma.gameSession.update({
@@ -96,7 +96,7 @@ describe('Server-side session expiration', () => {
   it('reconciles multiple sessions that expired while the server was offline', async () => {
     const ids: string[] = [];
     for (let index = 0; index < 3; index += 1) {
-      const { machine } = await createMachineWithQr(ctx.businessId, {
+      const { machine, qrPayload } = await createMachineWithQr(ctx.businessId, {
         code: `OFFLINE-${index}-${Date.now().toString(36).slice(-4)}`,
       });
       const pkg = await createPackage(ctx.businessId);
@@ -104,7 +104,7 @@ describe('Server-side session expiration', () => {
       const started = await api
         .post('/api/v1/sessions/start')
         .set(auth(ctx.employerToken))
-        .send({ paymentId: payment.body.data.id });
+        .send({ paymentId: payment.body.data.id, qrToken: qrPayload });
       const sessionId = started.body.data.session.id as string;
       ids.push(sessionId);
       await prisma.gameSession.update({
@@ -125,13 +125,13 @@ describe('Server-side session expiration', () => {
   });
 
   it('sends de-duplicated expiry warnings before the timer runs out', async () => {
-    const { machine } = await createMachineWithQr(ctx.businessId, { code: 'WARN-1' });
+    const { machine, qrPayload } = await createMachineWithQr(ctx.businessId, { code: 'WARN-1' });
     const pkg = await createPackage(ctx.businessId, { durationMinutes: 10 });
     const payment = await cashPayment(ctx.employerToken, machine.id, pkg.id);
     const started = await api
       .post('/api/v1/sessions/start')
       .set(auth(ctx.employerToken))
-      .send({ paymentId: payment.body.data.id });
+      .send({ paymentId: payment.body.data.id, qrToken: qrPayload });
     const sessionId = started.body.data.session.id as string;
 
     await prisma.gameSession.update({

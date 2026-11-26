@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 import { config } from '../config/env';
+import type { TransactionClient } from '../config/database';
+import { AppError } from '../utils/errors';
 
 const QR_PREFIX = 'grs:v1:';
 
@@ -31,4 +33,35 @@ export function normalizeQrPayload(raw: string): string {
 /** The exact string that is rendered into the QR code image. */
 export function qrImagePayload(rawToken: string): string {
   return `${QR_PREFIX}${rawToken}`;
+}
+
+/**
+ * Verifies that the supplied QR payload is active and belongs to the target
+ * machine. Used to enforce physical presence at the machine when an employer
+ * starts or ends a session.
+ */
+export async function requireValidMachineQr(
+  tx: TransactionClient,
+  machineId: string,
+  rawToken: string | undefined,
+): Promise<void> {
+  const normalized = rawToken ? normalizeQrPayload(rawToken) : '';
+  if (!normalized) {
+    throw AppError.badRequest(
+      'Scanning the machine QR code is required for this action',
+      undefined,
+      'QR_REQUIRED',
+    );
+  }
+  const tokenHash = hashQrToken(normalized);
+  const record = await tx.machineQRCode.findFirst({
+    where: { tokenHash, isActive: true },
+    select: { machineId: true },
+  });
+  if (!record || record.machineId !== machineId) {
+    throw AppError.forbidden(
+      'The scanned QR code does not match this machine',
+      'QR_MISMATCH',
+    );
+  }
 }

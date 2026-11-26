@@ -422,3 +422,50 @@ export async function getEmployerActivity(businessId: string, id: string, query:
     auditLogs,
   };
 }
+
+export async function deleteEmployer(businessId: string, id: string, actorId: string, req: Request) {
+  const existing = await prisma.user.findFirst({
+    where: { id, businessId, role: 'EMPLOYER', deletedAt: null },
+  });
+  if (!existing) throw AppError.notFound('Employer', 'EMPLOYER_NOT_FOUND');
+
+  const activeSessionCount = await prisma.gameSession.count({
+    where: { employerId: id, status: { in: ['CREATED', 'ACTIVE', 'PAUSED'] } },
+  });
+  if (activeSessionCount > 0) {
+    throw AppError.conflict(
+      'This employer has active game sessions. End or cancel them before deleting.',
+      'EMPLOYER_HAS_ACTIVE_SESSION',
+    );
+  }
+
+  const deletedAt = new Date();
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id },
+      data: {
+        status: 'SUSPENDED',
+        deletedAt,
+        initialPasswordEncrypted: null,
+        initialPasswordSetAt: null,
+      },
+    });
+    await tx.refreshToken.updateMany({
+      where: { userId: id, revokedAt: null },
+      data: { revokedAt: deletedAt },
+    });
+    await recordAudit(tx, {
+      businessId,
+      userId: actorId,
+      actorRole: 'ADMIN',
+      action: 'EMPLOYER_DELETED',
+      entityType: 'User',
+      entityId: id,
+      before: { username: existing.username, status: existing.status },
+      after: { deletedAt },
+      req,
+    });
+  });
+
+  return { deleted: true };
+}

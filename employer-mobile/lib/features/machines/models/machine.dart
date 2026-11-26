@@ -118,8 +118,13 @@ class PackageOption {
 }
 
 class ResolvedMachine {
-  const ResolvedMachine({required this.machine, required this.packages});
+  const ResolvedMachine({
+    required this.machine,
+    required this.packages,
+    this.qrToken,
+  });
 
   final MachineModel machine;
   final List<PackageOption> packages;
+  final String? qrToken;
 }

@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'alarm_service.dart';
 import 'local_notifications_service.dart';
 
 final localNotificationsServiceProvider = Provider<LocalNotificationsService>((
@@ -9,3 +10,5 @@ final localNotificationsServiceProvider = Provider<LocalNotificationsService>((
     'LocalNotificationsService must be overridden at startup',
   );
 });
+
+final alarmServiceProvider = Provider<AlarmService>((ref) => AlarmService());

@@ -138,17 +138,32 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen>
   }
 
   Future<void> _end(SessionModel session) async {
-    final settings = ref.read(authControllerProvider).value?.settings;
-    final reason = await _askEndReason(
-      requireReason: settings?.requireEndReason ?? false,
+    final qrToken = await context.push<String>(
+      '/scan',
+      extra: <String, String>{
+        'machineId': session.machine.id,
+        'machineName': session.machine.name,
+      },
     );
+    if (qrToken == null || !mounted) return;
+
+    final settings = ref.read(authControllerProvider).value?.settings;
+    final reason = session.isExpired
+        ? 'Time expired'
+        : await _askEndReason(
+            requireReason: settings?.requireEndReason ?? false,
+          );
     if (reason == null) return;
 
     setState(() => _busy = true);
     try {
       await ref
           .read(employerRepositoryProvider)
-          .endSession(session.id, reason: reason.isEmpty ? null : reason);
+          .endSession(
+            session.id,
+            reason: reason.isEmpty ? null : reason,
+            qrToken: qrToken,
+          );
       ref.invalidate(sessionDetailProvider(widget.sessionId));
       ref.invalidate(dashboardProvider);
       ref.invalidate(activeSessionsProvider);
@@ -606,7 +621,7 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen>
                 ],
               ),
             ),
-            if (running) ...[
+            if (running || session.isExpired) ...[
               const SizedBox(height: 16),
               ..._actionButtons(session, settings),
             ] else ...[
@@ -633,6 +648,20 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen>
     SessionModel session,
     BusinessSettings? settings,
   ) {
+    if (session.isExpired) {
+      return [
+        FilledButton.icon(
+          style: FilledButton.styleFrom(
+            backgroundColor: AppColors.danger,
+            minimumSize: const Size.fromHeight(50),
+          ),
+          onPressed: _busy ? null : () => _end(session),
+          icon: const Icon(Icons.qr_code_scanner),
+          label: const Text('Time expired — Scan QR to end'),
+        ),
+      ];
+    }
+
     final allowExtension = settings?.allowExtension ?? true;
     final allowPause = settings?.allowPause ?? false;
     final allowEnd = settings?.allowManualEnd ?? false;

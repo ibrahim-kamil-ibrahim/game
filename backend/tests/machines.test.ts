@@ -165,7 +165,7 @@ describe('Machines and QR codes', () => {
   });
 
   it('blocks status changes while a machine has an active session', async () => {
-    const { machine } = await createMachineWithQr(ctx.businessId, { code: 'BUSY-1' });
+    const { machine, qrPayload } = await createMachineWithQr(ctx.businessId, { code: 'BUSY-1' });
     const pkg = await createPackage(ctx.businessId);
     const payment = await api
       .post('/api/v1/payments/cash')
@@ -176,7 +176,7 @@ describe('Machines and QR codes', () => {
     const start = await api
       .post('/api/v1/sessions/start')
       .set(auth(ctx.employerToken))
-      .send({ paymentId: payment.body.data.id });
+      .send({ paymentId: payment.body.data.id, qrToken: qrPayload });
     expect(start.status).toBe(201);
 
     const maintenance = await api

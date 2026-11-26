@@ -92,8 +92,22 @@ void main() {
     await tester.pump();
     expect(find.text('PAUSED'), findsOneWidget);
 
-    final ended = _session(
+    final expired = _session(
       status: 'EXPIRED',
+      remainingSeconds: 0,
+      endsAt: DateTime.now().toUtc().subtract(const Duration(minutes: 1)),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: SessionCountdown(session: expired)),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('00:00'), findsOneWidget);
+    expect(find.text('Time expired — scan QR to end'), findsOneWidget);
+
+    final ended = _session(
+      status: 'COMPLETED',
       remainingSeconds: 0,
       endsAt: DateTime.now().toUtc().subtract(const Duration(minutes: 1)),
     );

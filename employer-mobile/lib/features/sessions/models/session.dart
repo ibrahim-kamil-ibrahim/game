@@ -109,9 +109,18 @@ class SessionModel {
 
   bool get isActive => status == 'ACTIVE';
   bool get isPaused => status == 'PAUSED';
+  bool get isExpired => status == 'EXPIRED';
   bool get isRunning => status == 'ACTIVE' || status == 'PAUSED';
   bool get isFinished =>
       status == 'COMPLETED' || status == 'EXPIRED' || status == 'CANCELLED';
+
+  /// True when the session's time has run out and it is still awaiting the
+  /// employer's QR-scan checkout.
+  bool isTimeUpAt(DateTime serverNow) {
+    if (isExpired) return true;
+    if (isActive && endsAt != null) return !endsAt!.isAfter(serverNow);
+    return false;
+  }
   int get totalPriceSantim =>
       priceSantim + extensions.fold(0, (sum, ext) => sum + ext.priceSantim);
 

@@ -8,11 +8,13 @@ import {
   Pencil,
   Plus,
   Power,
+  Trash2,
   Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   createEmployer,
+  deleteEmployer,
   listEmployers,
   resetEmployerPassword,
   setEmployerStatus,
@@ -23,6 +25,7 @@ import { PageHeader, SectionCard, SearchInput, StatCard, Avatar } from '../compo
 import { Button } from '../components/ui/Button';
 import { Select } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { UserStatusBadge } from '../components/ui/Badge';
 import { EmptyState, ErrorState, TableSkeleton } from '../components/ui/States';
 import { Pagination } from '../components/ui/Pagination';
@@ -50,6 +53,7 @@ export function EmployersPage() {
   const [resetError, setResetError] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<CredentialSet | null>(null);
   const [credentialsTitle, setCredentialsTitle] = useState('Employer account created');
+  const [deleteTarget, setDeleteTarget] = useState<EmployerListItem | null>(null);
 
   useEffect(() => setPage(1), [debouncedSearch, status]);
 
@@ -116,6 +120,16 @@ export function EmployersPage() {
       if (previous) void queryClient.invalidateQueries({ queryKey: ['employer', previous.id] });
     },
     onError: (error) => setResetError(errorMessage(error)),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteEmployer(id),
+    onSuccess: () => {
+      toast.success(`${deleteTarget?.fullName ?? 'Employer'} deleted`);
+      setDeleteTarget(null);
+      invalidate();
+    },
+    onError: (error) => toast.error(errorMessage(error)),
   });
 
   const items = query.data?.items ?? [];
@@ -287,6 +301,13 @@ export function EmployersPage() {
                               <Power className="h-3.5 w-3.5" />
                               {employer.status === 'ACTIVE' ? 'Suspend access' : 'Reactivate account'}
                             </button>
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-danger-600 hover:bg-danger-50"
+                              onClick={() => setDeleteTarget(employer)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" /> Delete employer
+                            </button>
                           </div>
                         </details>
                       </div>
@@ -397,6 +418,18 @@ export function EmployersPage() {
             : 'Share these credentials with the employer securely.'
         }
         onClose={() => setCredentials(null)}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete employer?"
+        description={`Remove ${deleteTarget?.fullName ?? 'this employer'} (@${deleteTarget?.username ?? ''})? They will no longer be able to sign in, while historical payments and sessions are preserved.`}
+        confirmLabel="Delete employer"
+        loading={deleteMutation.isPending}
+        onConfirm={() => {
+          if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
+        }}
       />
     </div>
   );

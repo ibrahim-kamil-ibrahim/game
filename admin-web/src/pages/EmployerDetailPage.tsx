@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Copy, Eye, EyeOff, KeyRound, Pencil, Power, Wallet, Gamepad2, Clock3, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Copy, Eye, EyeOff, KeyRound, Pencil, Power, Wallet, Gamepad2, Clock3, ShieldCheck, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
+  deleteEmployer,
   getEmployer,
   getEmployerActivity,
   resetEmployerPassword,
@@ -13,6 +14,7 @@ import {
 import { PageHeader, SectionCard, StatCard, Tabs, Avatar, DetailRow } from '../components/ui/Layout';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { Badge, PaymentStatusBadge, SessionStatusBadge, UserStatusBadge } from '../components/ui/Badge';
 import { EmptyState, ErrorState, LoadingState, TableSkeleton } from '../components/ui/States';
 import { EmployerFormModal } from '../components/EmployerFormModal';
@@ -38,7 +40,8 @@ export function EmployerDetailPage() {
   const [newPassword, setNewPassword] = useState('');
   const [resetError, setResetError] = useState<string | null>(null);
   const [confirmStatus, setConfirmStatus] = useState(false);
-  const [revealPassword, setRevealPassword] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [revealPassword, setRevealPassword] = useState(true);
   const [resetCredentials, setResetCredentials] = useState<CredentialSet | null>(null);
 
   const query = useQuery({
@@ -98,6 +101,16 @@ export function EmployerDetailPage() {
     onError: (error) => setResetError(errorMessage(error)),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteEmployer(id),
+    onSuccess: () => {
+      toast.success('Employer deleted');
+      void queryClient.invalidateQueries({ queryKey: ['employers'] });
+      navigate('/employers');
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+
   if (query.isLoading) {
     return (
       <div className="space-y-6">
@@ -153,6 +166,13 @@ export function EmployerDetailPage() {
                 onClick={() => setConfirmStatus(true)}
               >
                 {employer.status === 'ACTIVE' ? 'Suspend access' : 'Reactivate'}
+              </Button>
+              <Button
+                variant="danger"
+                icon={<Trash2 className="h-4 w-4" />}
+                onClick={() => setConfirmDelete(true)}
+              >
+                Delete
               </Button>
             </>
           }
@@ -233,7 +253,7 @@ export function EmployerDetailPage() {
               <div className="mt-3 rounded-lg border border-brand-200 bg-brand-50 px-3.5 py-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[11px] font-semibold tracking-wider text-brand-700 uppercase">
-                    Temporary password
+                    Password
                   </span>
                   <div className="flex items-center gap-1">
                     <button
@@ -265,10 +285,11 @@ export function EmployerDetailPage() {
                 <p className="mt-1 font-mono text-sm font-semibold break-all text-navy-900">
                   {revealPassword ? credentials.temporaryPassword : '••••••••••••'}
                 </p>
-                <p className="mt-1 text-[11px] text-brand-600">
-                  Generated {formatDateTime(credentials.setAt)}. Available until the employer signs in for
-                  the first time.
-                </p>
+                {credentials.setAt && (
+                  <p className="mt-1 text-[11px] text-brand-600">
+                    Updated {formatDateTime(credentials.setAt)}
+                  </p>
+                )}
                 <Button
                   size="sm"
                   variant="secondary"
@@ -279,7 +300,7 @@ export function EmployerDetailPage() {
                       'GameZone Employer sign-in',
                       `Name: ${employer.fullName}`,
                       `Username: ${credentials.username}`,
-                      `Temporary password: ${credentials.temporaryPassword}`,
+                      `Password: ${credentials.temporaryPassword}`,
                     ].join('\n');
                     const ok = await copyText(text);
                     if (ok) toast.success('Credentials copied');
@@ -293,8 +314,7 @@ export function EmployerDetailPage() {
               <div className="mt-3 flex items-start gap-2 rounded-lg bg-warning-50 px-3.5 py-3 text-[11px] leading-5 text-warning-600">
                 <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>
-                  No temporary password available. It is cleared after the employer's first sign-in. Use
-                  reset below to generate a new one.
+                  No password stored yet. Use reset below to set a password that can be viewed and copied here.
                 </span>
               </div>
             )}
@@ -502,6 +522,16 @@ export function EmployerDetailPage() {
             : 'The employer will be able to log in and operate machines again.'}
         </p>
       </Modal>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        title="Delete employer?"
+        description={`Remove ${employer.fullName} (@${employer.username})? They will no longer be able to sign in, while historical payments and sessions are preserved.`}
+        confirmLabel="Delete employer"
+        loading={deleteMutation.isPending}
+        onConfirm={() => deleteMutation.mutate()}
+      />
     </div>
   );
 }

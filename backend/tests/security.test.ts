@@ -22,14 +22,14 @@ beforeAll(async () => {
 describe('Security and authorization boundaries', () => {
   it('prevents employers from reading another employer records', async () => {
     const other = await createEmployerAccount(ctx.businessId, 'private-employer');
-    const { machine } = await createMachineWithQr(ctx.businessId, { code: 'PRIV-1' });
+    const { machine, qrPayload } = await createMachineWithQr(ctx.businessId, { code: 'PRIV-1' });
     const pkg = await createPackage(ctx.businessId);
     const payment = await cashPayment(other.token, machine.id, pkg.id);
 
     const sessionStart = await api
       .post('/api/v1/sessions/start')
       .set(auth(other.token))
-      .send({ paymentId: payment.body.data.id });
+      .send({ paymentId: payment.body.data.id, qrToken: qrPayload });
     expect(sessionStart.status).toBe(201);
     const sessionId = sessionStart.body.data.session.id as string;
 
@@ -107,13 +107,13 @@ describe('Security and authorization boundaries', () => {
   });
 
   it('protects completed financial records from deletion and mutation', async () => {
-    const { machine } = await createMachineWithQr(ctx.businessId, { code: 'FIN-1' });
+    const { machine, qrPayload } = await createMachineWithQr(ctx.businessId, { code: 'FIN-1' });
     const pkg = await createPackage(ctx.businessId);
     const payment = await cashPayment(ctx.employerToken, machine.id, pkg.id);
     const started = await api
       .post('/api/v1/sessions/start')
       .set(auth(ctx.employerToken))
-      .send({ paymentId: payment.body.data.id });
+      .send({ paymentId: payment.body.data.id, qrToken: qrPayload });
     const sessionId = started.body.data.session.id as string;
 
     const employerVoid = await api
@@ -137,7 +137,7 @@ describe('Security and authorization boundaries', () => {
     await api
       .post(`/api/v1/sessions/${sessionId}/end`)
       .set(auth(ctx.employerToken))
-      .send({ reason: 'done' });
+      .send({ reason: 'done', qrToken: qrPayload });
 
     const refund = await api
       .post(`/api/v1/payments/${payment.body.data.id}/refund`)

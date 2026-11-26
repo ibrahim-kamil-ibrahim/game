@@ -115,7 +115,7 @@ class EmployerRepository {
         .whereType<Map<String, dynamic>>()
         .map(PackageOption.fromJson)
         .toList();
-    return ResolvedMachine(machine: machine, packages: packages);
+    return ResolvedMachine(machine: machine, packages: packages, qrToken: token);
   }
 
   Future<ResolvedMachine> fetchMachine(String machineId) async {
@@ -152,10 +152,13 @@ class EmployerRepository {
     return PaymentResult.fromJson(data);
   }
 
-  Future<SessionModel> startSession(String paymentId) async {
+  Future<SessionModel> startSession(
+    String paymentId, {
+    required String qrToken,
+  }) async {
     final data = await _api.post(
       '/sessions/start',
-      data: {'paymentId': paymentId},
+      data: {'paymentId': paymentId, 'qrToken': qrToken},
     );
     if (data is Map<String, dynamic> &&
         data['session'] is Map<String, dynamic>) {
@@ -184,10 +187,14 @@ class EmployerRepository {
     return SessionModel.fromJson(data as Map<String, dynamic>);
   }
 
-  Future<SessionModel> endSession(String sessionId, {String? reason}) async {
+  Future<SessionModel> endSession(
+    String sessionId, {
+    String? reason,
+    required String qrToken,
+  }) async {
     final data = await _api.post(
       '/sessions/$sessionId/end',
-      data: {'reason': reason},
+      data: {'reason': reason, 'qrToken': qrToken},
     );
     return SessionModel.fromJson(data as Map<String, dynamic>);
   }

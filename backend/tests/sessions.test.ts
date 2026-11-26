@@ -20,7 +20,7 @@ beforeAll(async () => {
 });
 
 async function startReadySession(options: { durationMinutes?: number; priceSantim?: number } = {}) {
-  const { machine } = await createMachineWithQr(ctx.businessId, {
+  const { machine, qrPayload } = await createMachineWithQr(ctx.businessId, {
     code: `SESS-${Math.random().toString(36).slice(2, 7).toUpperCase()}`,
   });
   const pkg = await createPackage(ctx.businessId, {
@@ -32,9 +32,9 @@ async function startReadySession(options: { durationMinutes?: number; priceSanti
   const started = await api
     .post('/api/v1/sessions/start')
     .set(auth(ctx.employerToken))
-    .send({ paymentId: payment.body.data.id });
+    .send({ paymentId: payment.body.data.id, qrToken: qrPayload });
   expect(started.status).toBe(201);
-  return { machine, pkg, payment: payment.body.data, session: started.body.data.session };
+  return { machine, qrPayload, pkg, payment: payment.body.data, session: started.body.data.session };
 }
 
 describe('Cash payments and session lifecycle', () => {
@@ -134,12 +134,12 @@ describe('Cash payments and session lifecycle', () => {
   });
 
   it('ends a session manually, releases the machine and keeps the payment', async () => {
-    const { machine, session, payment } = await startReadySession();
+    const { machine, qrPayload, session, payment } = await startReadySession();
 
     const ended = await api
       .post(`/api/v1/sessions/${session.id}/end`)
       .set(auth(ctx.employerToken))
-      .send({ reason: 'Customer finished early' });
+      .send({ reason: 'Customer finished early', qrToken: qrPayload });
 
     expect(ended.status).toBe(200);
     expect(ended.body.data.status).toBe('COMPLETED');
@@ -155,8 +155,86 @@ describe('Cash payments and session lifecycle', () => {
     const endAgain = await api
       .post(`/api/v1/sessions/${session.id}/end`)
       .set(auth(ctx.employerToken))
-      .send({});
+      .send({ qrToken: qrPayload });
     expect(endAgain.status).toBe(409);
+  });
+
+  it('requires a matching machine QR code when employers start or end a session', async () => {
+    const { machine, qrPayload } = await createMachineWithQr(ctx.businessId, { code: 'QR-REQ-1' });
+    const { qrPayload: otherQr } = await createMachineWithQr(ctx.businessId, { code: 'QR-REQ-2' });
+    const pkg = await createPackage(ctx.businessId);
+    const payment = await cashPayment(ctx.employerToken, machine.id, pkg.id);
+    expect(payment.status).toBe(201);
+
+    const startWithoutQr = await api
+      .post('/api/v1/sessions/start')
+      .set(auth(ctx.employerToken))
+      .send({ paymentId: payment.body.data.id });
+    expect(startWithoutQr.status).toBe(400);
+    expect(startWithoutQr.body.error.code).toBe('QR_REQUIRED');
+
+    const startWrongQr = await api
+      .post('/api/v1/sessions/start')
+      .set(auth(ctx.employerToken))
+      .send({ paymentId: payment.body.data.id, qrToken: otherQr });
+    expect(startWrongQr.status).toBe(403);
+    expect(startWrongQr.body.error.code).toBe('QR_MISMATCH');
+
+    const started = await api
+      .post('/api/v1/sessions/start')
+      .set(auth(ctx.employerToken))
+      .send({ paymentId: payment.body.data.id, qrToken: qrPayload });
+    expect(started.status).toBe(201);
+    const sessionId = started.body.data.session.id as string;
+
+    const endWithoutQr = await api
+      .post(`/api/v1/sessions/${sessionId}/end`)
+      .set(auth(ctx.employerToken))
+      .send({ reason: 'done' });
+    expect(endWithoutQr.status).toBe(400);
+    expect(endWithoutQr.body.error.code).toBe('QR_REQUIRED');
+
+    const endWrongQr = await api
+      .post(`/api/v1/sessions/${sessionId}/end`)
+      .set(auth(ctx.employerToken))
+      .send({ reason: 'done', qrToken: otherQr });
+    expect(endWrongQr.status).toBe(403);
+    expect(endWrongQr.body.error.code).toBe('QR_MISMATCH');
+
+    const ended = await api
+      .post(`/api/v1/sessions/${sessionId}/end`)
+      .set(auth(ctx.employerToken))
+      .send({ reason: 'done', qrToken: qrPayload });
+    expect(ended.status).toBe(200);
+  });
+
+  it('keeps expired sessions in active list until employer scans QR to end them', async () => {
+    const { qrPayload, session } = await startReadySession();
+
+    await prisma.gameSession.update({
+      where: { id: session.id },
+      data: { status: 'EXPIRED', actualEndedAt: new Date() },
+    });
+
+    const activeBefore = await api.get('/api/v1/sessions/active').set(auth(ctx.employerToken));
+    expect(activeBefore.status).toBe(200);
+    expect(activeBefore.body.data.some((item: { id: string }) => item.id === session.id)).toBe(true);
+
+    const endWithoutQr = await api
+      .post(`/api/v1/sessions/${session.id}/end`)
+      .set(auth(ctx.employerToken))
+      .send({});
+    expect(endWithoutQr.status).toBe(400);
+
+    const ended = await api
+      .post(`/api/v1/sessions/${session.id}/end`)
+      .set(auth(ctx.employerToken))
+      .send({ qrToken: qrPayload });
+    expect(ended.status).toBe(200);
+    expect(ended.body.data.status).toBe('COMPLETED');
+
+    const activeAfter = await api.get('/api/v1/sessions/active').set(auth(ctx.employerToken));
+    expect(activeAfter.body.data.some((item: { id: string }) => item.id === session.id)).toBe(false);
   });
 
   it('extends a paid session with a separate recorded transaction', async () => {

@@ -691,7 +691,15 @@ class _MachineGrid extends StatelessWidget {
           return SizedBox(
             width: 176,
             child: AppCard(
-              onTap: () => context.push('/machine/${machine.id}'),
+              onTap: () {
+                if (machine.activeSession != null) {
+                  context.push('/session/${machine.activeSession!.id}');
+                } else if (machine.isAvailable) {
+                  context.push('/scan');
+                } else {
+                  context.push('/machine/${machine.id}');
+                }
+              },
               padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -736,7 +744,7 @@ class _MachineGrid extends StatelessWidget {
                   else
                     Text(
                       machine.isAvailable
-                          ? 'Tap to rent'
+                          ? 'Scan QR to rent'
                           : humanize(machine.status),
                       style: TextStyle(
                         fontSize: 10,

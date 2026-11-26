@@ -72,7 +72,7 @@ class _CashConfirmationScreenState
     try {
       final session = await ref
           .read(employerRepositoryProvider)
-          .startSession(payment.id);
+          .startSession(payment.id, qrToken: widget.draft.qrToken);
       if (!mounted) return;
       ref.invalidate(dashboardProvider);
       ref.invalidate(activeSessionsProvider);

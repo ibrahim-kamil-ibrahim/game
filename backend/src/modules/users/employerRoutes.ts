@@ -6,6 +6,7 @@ import { authenticate, requireRole } from '../../middleware/auth';
 import { paginationSchema } from '../../utils/pagination';
 import {
   createEmployer,
+  deleteEmployer,
   getEmployer,
   getEmployerActivity,
   listEmployers,
@@ -144,6 +145,15 @@ router.get(
       req.params.id,
       req.query as never,
     );
+    res.json({ success: true, data: result });
+  }),
+);
+
+router.delete(
+  '/:id',
+  validate({ params: idParamSchema }),
+  asyncHandler(async (req, res) => {
+    const result = await deleteEmployer(req.user!.businessId, req.params.id, req.user!.id, req);
     res.json({ success: true, data: result });
   }),
 );

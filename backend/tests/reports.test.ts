@@ -18,7 +18,7 @@ beforeAll(async () => {
 });
 
 async function runSession(machineCode: string, priceSantim: number, durationMinutes = 30) {
-  const { machine } = await createMachineWithQr(ctx.businessId, { code: machineCode });
+  const { machine, qrPayload } = await createMachineWithQr(ctx.businessId, { code: machineCode });
   const pkg = await createPackage(ctx.businessId, {
     name: `Package ${machineCode}`,
     durationMinutes,
@@ -28,9 +28,9 @@ async function runSession(machineCode: string, priceSantim: number, durationMinu
   const started = await api
     .post('/api/v1/sessions/start')
     .set(auth(ctx.employerToken))
-    .send({ paymentId: payment.body.data.id });
+    .send({ paymentId: payment.body.data.id, qrToken: qrPayload });
   expect(started.status).toBe(201);
-  return { machine, pkg, payment: payment.body.data, session: started.body.data.session };
+  return { machine, qrPayload, pkg, payment: payment.body.data, session: started.body.data.session };
 }
 
 describe('Financial reports and exports', () => {
@@ -42,7 +42,7 @@ describe('Financial reports and exports', () => {
     await api
       .post(`/api/v1/sessions/${first.session.id}/end`)
       .set(auth(ctx.employerToken))
-      .send({ reason: 'finished' });
+      .send({ reason: 'finished', qrToken: first.qrPayload });
 
     // Extension adds a separate payment.
     const extensionPackage = await createPackage(ctx.businessId, {

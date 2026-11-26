@@ -63,7 +63,16 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/scan',
-        builder: (context, state) => const ScannerScreen(),
+        builder: (context, state) {
+          final extra = state.extra;
+          if (extra is Map<String, String>) {
+            return ScannerScreen(
+              verifyMachineId: extra['machineId'],
+              verifyMachineName: extra['machineName'],
+            );
+          }
+          return const ScannerScreen();
+        },
       ),
       GoRoute(
         path: '/machine/:id',
