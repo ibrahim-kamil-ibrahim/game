@@ -1,7 +1,7 @@
 class AppConfig {
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:4000/api/v1',
+    defaultValue: 'https://game-rental-api-znao.onrender.com/api/v1',
   );
   static const String fallbackTimezone = 'Africa/Addis_Ababa';
   static const String appName = 'GameZone Employer';

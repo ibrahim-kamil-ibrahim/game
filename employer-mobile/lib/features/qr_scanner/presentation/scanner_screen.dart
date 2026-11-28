@@ -268,7 +268,6 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                             child: Container(
                               width: 30,
                               height: 30,
-                              margin: const EdgeInsets.all(-2),
                               decoration: BoxDecoration(
                                 border: Border(
                                   top: alignment.y < 0

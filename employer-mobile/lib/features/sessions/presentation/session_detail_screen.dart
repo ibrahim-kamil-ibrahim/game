@@ -181,6 +181,37 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen>
     }
   }
 
+  Future<void> _nextGame(SessionModel session) async {
+    final qrToken = await context.push<String>(
+      '/scan',
+      extra: <String, String>{
+        'machineId': session.machine.id,
+        'machineName': session.machine.name,
+      },
+    );
+    if (qrToken == null || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      final repo = ref.read(employerRepositoryProvider);
+      await repo.endSession(
+        session.id,
+        reason: 'Started next game',
+        qrToken: qrToken,
+      );
+      ref.invalidate(sessionDetailProvider(widget.sessionId));
+      ref.invalidate(dashboardProvider);
+      ref.invalidate(activeSessionsProvider);
+      final resolved = await repo.resolveQr(qrToken);
+      if (!mounted) return;
+      context.pushReplacement('/machine/${resolved.machine.id}', extra: resolved);
+    } catch (error) {
+      _showError(error);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _extend(SessionModel session) async {
     final qrToken = await context.push<String>(
       '/scan',
@@ -671,6 +702,13 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen>
   ) {
     if (session.isExpired) {
       return [
+        PrimaryButton(
+          label: 'Next game — Scan QR',
+          icon: Icons.play_arrow_rounded,
+          loading: _busy,
+          onPressed: () => _nextGame(session),
+        ),
+        const SizedBox(height: 10),
         FilledButton.icon(
           style: FilledButton.styleFrom(
             backgroundColor: AppColors.danger,
