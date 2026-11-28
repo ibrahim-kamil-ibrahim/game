@@ -8,6 +8,7 @@ import { authenticate } from '../../middleware/auth';
 import { qrLimiter } from '../../middleware/rateLimit';
 import { hashQrToken, normalizeQrPayload } from '../../services/qrService';
 import { getApplicablePackages, packageOptionDto } from '../../services/packageService';
+import { presentSession, sessionInclude } from '../../services/sessionService';
 import { remainingSeconds } from '../../utils/time';
 
 const router = Router();
@@ -81,6 +82,48 @@ router.post(
         machine: baseMachine,
       });
     }
+
+    const packages = await getApplicablePackages(machine);
+    const settingsDto = {
+      allowExtension: machine.business.settings?.allowExtension ?? true,
+      allowPause: machine.business.settings?.allowPause ?? false,
+      allowManualEnd: machine.business.settings?.allowManualEnd ?? false,
+      requireEndReason: machine.business.settings?.requireEndReason ?? false,
+    };
+
+    if (activeSession && ['ACTIVE', 'PAUSED'].includes(activeSession.status)) {
+      const isExpired = activeSession.status === 'ACTIVE' && activeSession.endsAt && activeSession.endsAt <= now;
+      if (isExpired) {
+        throw new AppError(409, 'MACHINE_IN_USE', `${machine.name} has an expired session awaiting QR checkout.`, {
+          machine: baseMachine,
+          activeSession: {
+            id: activeSession.id,
+            employer: activeSession.employer,
+            endsAt: activeSession.endsAt,
+            remainingSeconds: 0,
+          },
+        });
+      }
+
+      const fullSession = await prisma.gameSession.findUnique({
+        where: { id: activeSession.id },
+        include: sessionInclude,
+      });
+
+      res.json({
+        success: true,
+        data: {
+          machine: baseMachine,
+          packages: packages.map(packageOptionDto),
+          available: false,
+          activeSession: fullSession ? presentSession(fullSession, now) : null,
+          serverTime: now.toISOString(),
+          settings: settingsDto,
+        },
+      });
+      return;
+    }
+
     if (machine.status !== 'AVAILABLE' || activeSession) {
       throw new AppError(409, 'MACHINE_IN_USE', `${machine.name} is currently in use.`, {
         machine: baseMachine,
@@ -95,7 +138,6 @@ router.post(
       });
     }
 
-    const packages = await getApplicablePackages(machine);
     if (packages.length === 0) {
       throw new AppError(
         409,
@@ -111,13 +153,9 @@ router.post(
         machine: baseMachine,
         packages: packages.map(packageOptionDto),
         available: true,
+        activeSession: null,
         serverTime: now.toISOString(),
-        settings: {
-          allowExtension: machine.business.settings?.allowExtension ?? true,
-          allowPause: machine.business.settings?.allowPause ?? false,
-          allowManualEnd: machine.business.settings?.allowManualEnd ?? false,
-          requireEndReason: machine.business.settings?.requireEndReason ?? false,
-        },
+        settings: settingsDto,
       },
     });
   }),

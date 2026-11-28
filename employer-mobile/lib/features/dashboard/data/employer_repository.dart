@@ -115,7 +115,21 @@ class EmployerRepository {
         .whereType<Map<String, dynamic>>()
         .map(PackageOption.fromJson)
         .toList();
-    return ResolvedMachine(machine: machine, packages: packages, qrToken: token);
+    final activeSessionJson = data['activeSession'];
+    final settingsJson = data['settings'];
+    return ResolvedMachine(
+      machine: machine,
+      packages: packages,
+      qrToken: token,
+      available: data['available'] as bool? ?? true,
+      activeSession: activeSessionJson is Map<String, dynamic>
+          ? SessionModel.fromJson(activeSessionJson)
+          : null,
+      serverTime: parseDate(data['serverTime']),
+      allowExtension: settingsJson is Map<String, dynamic>
+          ? (settingsJson['allowExtension'] as bool? ?? true)
+          : true,
+    );
   }
 
   Future<ResolvedMachine> fetchMachine(String machineId) async {
@@ -203,10 +217,15 @@ class EmployerRepository {
     required String sessionId,
     required String packageId,
     required String idempotencyKey,
+    required String qrToken,
   }) async {
     final data = await _api.post(
-      '/sessions/$sessionId/extend',
-      data: {'packageId': packageId, 'idempotencyKey': idempotencyKey},
+      '/sessions/$sessionId/extensions',
+      data: {
+        'packageId': packageId,
+        'idempotencyKey': idempotencyKey,
+        'qrToken': qrToken,
+      },
     );
     return SessionModel.fromJson(data as Map<String, dynamic>);
   }

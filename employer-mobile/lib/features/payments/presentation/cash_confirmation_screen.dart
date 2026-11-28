@@ -7,9 +7,11 @@ import '../../../core/network/api_exception.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/common.dart';
+import '../../../core/widgets/session_countdown.dart';
 import '../../auth/providers/auth_controller.dart';
 import '../../dashboard/models/dashboard_models.dart';
 import '../../dashboard/providers/dashboard_providers.dart';
+import '../../sessions/models/session.dart';
 import '../models/payment_draft.dart';
 
 class CashConfirmationScreen extends ConsumerStatefulWidget {
@@ -31,6 +33,46 @@ class _CashConfirmationScreenState
   bool _paymentVoided = false;
   String? _error;
   PaymentResult? _payment;
+  SessionModel? _extendedSession;
+
+  Future<void> _confirmExtension() async {
+    final activeSession = widget.draft.activeSession;
+    if (activeSession == null ||
+        !_cashReceived ||
+        _processing ||
+        _extendedSession != null) {
+      return;
+    }
+    setState(() {
+      _processing = true;
+      _error = null;
+    });
+
+    try {
+      final updated = await ref
+          .read(employerRepositoryProvider)
+          .extendSession(
+            sessionId: activeSession.id,
+            packageId: widget.draft.package.id,
+            idempotencyKey: _idempotencyKey,
+            qrToken: widget.draft.qrToken,
+          );
+      if (!mounted) return;
+      ref.invalidate(dashboardProvider);
+      ref.invalidate(activeSessionsProvider);
+      ref.invalidate(sessionDetailProvider(updated.id));
+      setState(() {
+        _extendedSession = updated;
+        _processing = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _processing = false;
+        _error = ApiException.fromError(error).message;
+      });
+    }
+  }
 
   Future<void> _confirmCash() async {
     if (!_cashReceived || _processing || _payment != null) return;
@@ -97,10 +139,88 @@ class _CashConfirmationScreenState
     final user = ref.watch(authControllerProvider).value;
     final package = widget.draft.package;
     final machine = widget.draft.machine;
+    final activeSession = widget.draft.activeSession;
+    final isExtension = widget.draft.isExtension;
+
+    if (isExtension && _extendedSession != null) {
+      final updated = _extendedSession!;
+      return Scaffold(
+        appBar: AppBar(title: const Text('Time added')),
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppColors.navy,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Column(
+                children: [
+                  const Icon(
+                    Icons.check_circle,
+                    color: AppColors.success,
+                    size: 40,
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Play time extended',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '+${package.durationMinutes} min • ${formatEtb(package.priceSantim)}',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.navy200,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  SessionCountdown(
+                    session: updated,
+                    style: const TextStyle(fontSize: 48, color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            AppCard(
+              child: Column(
+                children: [
+                  InfoRow(label: 'Machine', value: machine.name),
+                  InfoRow(label: 'Added package', value: package.name),
+                  InfoRow(
+                    label: 'New end time',
+                    value: formatDateTime(updated.endsAt, timezone: timezone),
+                  ),
+                  InfoRow(
+                    label: 'Total duration',
+                    value: '${updated.durationMinutes} minutes',
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            PrimaryButton(
+              label: 'View active session',
+              icon: Icons.timer_outlined,
+              onPressed: () => context.pushReplacement(
+                '/session/${updated.id}',
+                extra: updated,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Cash payment'),
+        title: Text(isExtension ? 'Add more time' : 'Cash payment'),
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: _processing || _starting ? null : () => context.pop(),
@@ -110,12 +230,16 @@ class _CashConfirmationScreenState
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
         children: [
-          const Center(child: StepDots(current: 1)),
-          const SizedBox(height: 18),
+          if (!isExtension) ...[
+            const Center(child: StepDots(current: 1)),
+            const SizedBox(height: 18),
+          ],
           if (_payment == null)
-            const Text(
-              'Confirm the cash payment',
-              style: TextStyle(
+            Text(
+              isExtension
+                  ? 'Confirm cash to add time'
+                  : 'Confirm the cash payment',
+              style: const TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w800,
                 color: AppColors.navy,
@@ -179,8 +303,18 @@ class _CashConfirmationScreenState
                 InfoRow(label: 'Package', value: package.name),
                 InfoRow(
                   label: 'Duration',
-                  value: '${package.durationMinutes} minutes',
+                  value: isExtension
+                      ? '+${package.durationMinutes} minutes'
+                      : '${package.durationMinutes} minutes',
                 ),
+                if (isExtension && activeSession != null)
+                  InfoRow(
+                    label: 'Current end time',
+                    value: formatDateTime(
+                      activeSession.endsAt,
+                      timezone: timezone,
+                    ),
+                  ),
                 InfoRow(label: 'Payment method', value: 'Cash'),
                 InfoRow(label: 'Employee', value: user?.fullName ?? 'Employer'),
                 if (_payment != null)
@@ -304,10 +438,14 @@ class _CashConfirmationScreenState
             ),
             const SizedBox(height: 14),
             PrimaryButton(
-              label: 'Confirm cash payment',
-              icon: Icons.payments_outlined,
+              label: isExtension
+                  ? 'Confirm cash & add time'
+                  : 'Confirm cash payment',
+              icon: isExtension ? Icons.add_alarm : Icons.payments_outlined,
               loading: _processing,
-              onPressed: _cashReceived ? _confirmCash : null,
+              onPressed: _cashReceived
+                  ? (isExtension ? _confirmExtension : _confirmCash)
+                  : null,
             ),
           ] else if (!_paymentVoided) ...[
             Container(

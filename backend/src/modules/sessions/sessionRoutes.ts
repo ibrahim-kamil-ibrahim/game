@@ -42,6 +42,7 @@ const endSchema = z.object({
 const extendSchema = z.object({
   packageId: z.string().uuid('Select an extension package'),
   idempotencyKey: z.string().trim().min(8).max(128).optional(),
+  qrToken: z.string().trim().min(8).max(500).optional(),
 });
 
 router.post(
@@ -206,20 +207,20 @@ router.post(
   }),
 );
 
-router.post(
-  '/:id/extend',
-  validate({ params: idParamSchema, body: extendSchema }),
-  asyncHandler(async (req, res) => {
-    const session = await extendSession({
-      businessId: req.user!.businessId,
-      actor: { id: req.user!.id, role: req.user!.role },
-      sessionId: req.params.id,
-      packageId: req.body.packageId,
-      idempotencyKey: req.body.idempotencyKey,
-    });
-    res.json({ success: true, data: presentSession(session) });
-  }),
-);
+const handleExtend = asyncHandler(async (req, res) => {
+  const session = await extendSession({
+    businessId: req.user!.businessId,
+    actor: { id: req.user!.id, role: req.user!.role },
+    sessionId: req.params.id,
+    packageId: req.body.packageId,
+    idempotencyKey: req.body.idempotencyKey,
+    qrToken: req.body.qrToken,
+  });
+  res.json({ success: true, data: presentSession(session) });
+});
+
+router.post('/:id/extensions', validate({ params: idParamSchema, body: extendSchema }), handleExtend);
+router.post('/:id/extend', validate({ params: idParamSchema, body: extendSchema }), handleExtend);
 
 router.post(
   '/:id/pause',

@@ -129,6 +129,7 @@ export interface SessionExtension {
   newEndsAt: string;
   createdAt: string;
   paymentRef?: string;
+  createdBy?: { id: string; fullName: string; username: string };
 }
 
 export interface Session {

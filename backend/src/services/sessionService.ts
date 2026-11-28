@@ -39,6 +39,7 @@ export const sessionInclude = Prisma.validator<Prisma.GameSessionInclude>()({
     orderBy: { createdAt: 'asc' },
     include: {
       payment: { select: { transactionRef: true, status: true, amountSantim: true } },
+      createdBy: { select: { id: true, fullName: true, username: true } },
     },
   },
 });
@@ -98,6 +99,7 @@ export function presentSession(session: SessionWithRelations, now = new Date()) 
       newEndsAt: extension.newEndsAt,
       createdAt: extension.createdAt,
       paymentRef: extension.payment.transactionRef,
+      createdBy: extension.createdBy,
     })),
     payment: session.payment,
     createdAt: session.createdAt,
@@ -501,10 +503,11 @@ async function lockSession(tx: TransactionClient, sessionId: string, businessId:
       endsAt: Date | null;
       pausedAt: Date | null;
       machineName: string;
+      machineStatus: string;
     }>
   >(Prisma.sql`
     SELECT s.id, s."businessId", s."employerId", s."machineId", s.status, s."startedAt" AS "startsAt",
-           s."endsAt", s."pausedAt", m.name AS "machineName"
+           s."endsAt", s."pausedAt", m.name AS "machineName", m.status AS "machineStatus"
     FROM "GameSession" s JOIN "GameMachine" m ON m.id = s."machineId"
     WHERE s.id = ${sessionId}::uuid FOR UPDATE OF s
   `);
@@ -635,6 +638,7 @@ export interface ExtendSessionInput {
   sessionId: string;
   packageId: string;
   idempotencyKey?: string;
+  qrToken?: string;
 }
 
 /**
@@ -676,12 +680,37 @@ export async function extendSession(input: ExtendSessionInput): Promise<SessionW
 
   const updated = await prisma.$transaction(async (tx) => {
     const session = await lockSession(tx, input.sessionId, input.businessId, input.actor);
+
+    const txExistingPayment = await tx.payment.findFirst({
+      where: { businessId: input.businessId, idempotencyKey, type: 'EXTENSION' },
+      include: { extension: true },
+    });
+    if (txExistingPayment?.extension) {
+      const existingSession = await tx.gameSession.findUnique({
+        where: { id: txExistingPayment.extension.sessionId },
+        include: sessionInclude,
+      });
+      if (existingSession) return existingSession;
+    }
+
     if (!['ACTIVE', 'PAUSED'].includes(session.status)) {
       throw AppError.conflict('Only an active session can be extended', 'SESSION_NOT_ACTIVE');
+    }
+    if (session.status === 'ACTIVE' && session.endsAt && session.endsAt <= now) {
+      throw AppError.conflict(
+        'This session has already expired and cannot be extended',
+        'SESSION_EXPIRED',
+      );
+    }
+    if (session.machineStatus !== 'IN_USE') {
+      throw AppError.conflict('Machine is no longer in use', 'MACHINE_NOT_IN_USE');
     }
     const settings = await tx.businessSettings.findUnique({ where: { businessId: input.businessId } });
     if (input.actor.role !== 'ADMIN' && !settings?.allowExtension) {
       throw AppError.forbidden('Session extensions are disabled by the administrator', 'EXTENSION_DISABLED');
+    }
+    if (input.actor.role === 'EMPLOYER') {
+      await requireValidMachineQr(tx, session.machineId, input.qrToken);
     }
 
     const previousEndsAt = session.endsAt ?? now;

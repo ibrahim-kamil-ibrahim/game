@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/network/api_exception.dart';
+import '../../../core/notifications/alarm_service.dart';
 import '../../../core/notifications/notifications_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../auth/presentation/splash_screen.dart';
@@ -25,10 +26,12 @@ class _EmployerShellState extends ConsumerState<EmployerShell> {
   Timer? _tickTimer;
   Timer? _pollTimer;
   bool _ending = false;
+  late final AlarmService _alarmService;
 
   @override
   void initState() {
     super.initState();
+    _alarmService = ref.read(alarmServiceProvider);
     _tickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -41,7 +44,7 @@ class _EmployerShellState extends ConsumerState<EmployerShell> {
   void dispose() {
     _tickTimer?.cancel();
     _pollTimer?.cancel();
-    ref.read(alarmServiceProvider).stopAlarm();
+    _alarmService.stopAlarm();
     super.dispose();
   }
 
@@ -110,11 +113,10 @@ class _EmployerShellState extends ConsumerState<EmployerShell> {
         .where((s) => s.isTimeUpAt(serverNow))
         .toList();
 
-    final alarm = ref.read(alarmServiceProvider);
     if (expiredSessions.isNotEmpty) {
-      alarm.startAlarm();
+      _alarmService.startAlarm();
     } else {
-      alarm.stopAlarm();
+      _alarmService.stopAlarm();
     }
 
     final location = GoRouterState.of(context).matchedLocation;
@@ -132,7 +134,7 @@ class _EmployerShellState extends ConsumerState<EmployerShell> {
             _ExpiredAlarmBanner(
               sessions: expiredSessions,
               busy: _ending,
-              onScanToEnd: () => _scanAndEndExpired(expiredSessions.first),
+              onScanToEnd: _scanAndEndExpired,
             ),
           Expanded(child: widget.child),
         ],
@@ -197,69 +199,90 @@ class _ExpiredAlarmBanner extends StatelessWidget {
 
   final List<SessionModel> sessions;
   final bool busy;
-  final VoidCallback onScanToEnd;
+  final ValueChanged<SessionModel> onScanToEnd;
 
   @override
   Widget build(BuildContext context) {
-    final first = sessions.first;
-    final extra = sessions.length > 1 ? ' (+${sessions.length - 1} more)' : '';
     return Material(
       color: AppColors.danger,
       child: SafeArea(
         bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-          child: Row(
-            children: [
-              const Icon(
-                Icons.notifications_active,
-                color: Colors.white,
-                size: 22,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 190),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    Text(
-                      'Time expired: ${first.machine.name}$extra',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 13,
-                      ),
+                    const Icon(
+                      Icons.notifications_active,
+                      color: Colors.white,
+                      size: 18,
                     ),
-                    const Text(
-                      'Scan the machine QR code to end & stop alarm',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 11,
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        sessions.length == 1
+                            ? 'Time expired — scan QR to stop alarm'
+                            : '${sessions.length} machines expired — scan QR to stop alarm',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12.5,
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: AppColors.danger,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
+                const SizedBox(height: 8),
+                for (var i = 0; i < sessions.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          sessions[i].machine.code.isNotEmpty
+                              ? '${sessions[i].machine.name} (${sessions[i].machine.code})'
+                              : sessions[i].machine.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: AppColors.danger,
+                          minimumSize: const Size(0, 34),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                        ),
+                        onPressed: busy ? null : () => onScanToEnd(sessions[i]),
+                        icon: const Icon(Icons.qr_code_scanner, size: 15),
+                        label: const Text(
+                          'Scan QR',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                onPressed: busy ? null : onScanToEnd,
-                icon: const Icon(Icons.qr_code_scanner, size: 16),
-                label: const Text(
-                  'Scan QR',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
-                ),
-              ),
-            ],
+                ],
+              ],
+            ),
           ),
         ),
       ),

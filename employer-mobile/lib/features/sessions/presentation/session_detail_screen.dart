@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:uuid/uuid.dart';
 
 import '../../../core/notifications/notifications_provider.dart';
 import '../../../core/network/api_exception.dart';
@@ -15,6 +14,7 @@ import '../../auth/models/auth_user.dart';
 import '../../auth/providers/auth_controller.dart';
 import '../../dashboard/providers/dashboard_providers.dart';
 import '../../machines/models/machine.dart';
+import '../../payments/models/payment_draft.dart';
 import '../models/session.dart';
 
 class SessionDetailScreen extends ConsumerStatefulWidget {
@@ -182,6 +182,15 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen>
   }
 
   Future<void> _extend(SessionModel session) async {
+    final qrToken = await context.push<String>(
+      '/scan',
+      extra: <String, String>{
+        'machineId': session.machine.id,
+        'machineName': session.machine.name,
+      },
+    );
+    if (qrToken == null || !mounted) return;
+
     setState(() => _busy = true);
     ResolvedMachine? machineData;
     try {
@@ -209,7 +218,7 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Extend session',
+                  'Add More Time',
                   style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w800,
@@ -218,7 +227,7 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen>
                 ),
                 const SizedBox(height: 4),
                 const Text(
-                  'Collect the cash for the additional package. An extension payment is recorded separately.',
+                  'Select a package configured for this machine, then confirm the cash payment.',
                   style: TextStyle(
                     fontSize: 12,
                     color: AppColors.textSecondary,
@@ -290,29 +299,15 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen>
 
     if (chosen == null || !mounted) return;
 
-    setState(() => _busy = true);
-    try {
-      await ref
-          .read(employerRepositoryProvider)
-          .extendSession(
-            sessionId: session.id,
-            packageId: chosen.id,
-            idempotencyKey: const Uuid().v4(),
-          );
-      ref.invalidate(sessionDetailProvider(widget.sessionId));
-      ref.invalidate(dashboardProvider);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${chosen.name} added. Extension payment recorded.'),
-          ),
-        );
-      }
-    } catch (error) {
-      _showError(error);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    await context.push(
+      '/payment',
+      extra: PaymentDraft(
+        machine: machine.machine,
+        package: chosen,
+        qrToken: qrToken,
+        activeSession: session,
+      ),
+    );
   }
 
   Future<String?> _askEndReason({required bool requireReason}) async {
@@ -582,10 +577,36 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen>
                     ),
                     const SizedBox(height: 8),
                     ...extensions.map(
-                      (extension) => InfoRow(
-                        label: extension.packageName,
-                        value:
-                            '+${extension.durationMinutes} min • ${formatEtb(extension.priceSantim)}',
+                      (extension) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            InfoRow(
+                              label: extension.packageName,
+                              value:
+                                  '+${extension.durationMinutes} min • ${formatEtb(extension.priceSantim)}',
+                            ),
+                            Text(
+                              [
+                                if (extension.previousEndsAt != null &&
+                                    extension.newEndsAt != null)
+                                  '${formatTime(extension.previousEndsAt, timezone: timezone)} -> ${formatTime(extension.newEndsAt, timezone: timezone)}',
+                                if (extension.createdAt != null)
+                                  formatDateTime(
+                                    extension.createdAt,
+                                    timezone: timezone,
+                                  ),
+                                if (extension.paymentRef != null)
+                                  extension.paymentRef!,
+                              ].join(' • '),
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -669,7 +690,7 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen>
     return [
       if (allowExtension) ...[
         PrimaryButton(
-          label: 'Extend session',
+          label: 'Add More Time',
           icon: Icons.add_alarm,
           loading: _busy,
           onPressed: () => _extend(session),

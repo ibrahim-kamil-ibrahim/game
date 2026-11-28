@@ -6,8 +6,10 @@ import '../../../core/network/api_exception.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/common.dart';
+import '../../../core/widgets/session_countdown.dart';
 import '../../dashboard/providers/dashboard_providers.dart';
 import '../../payments/models/payment_draft.dart';
+import '../../sessions/models/session.dart';
 import '../models/machine.dart';
 
 class MachineScreen extends ConsumerStatefulWidget {
@@ -46,8 +48,19 @@ class _MachineScreenState extends ConsumerState<MachineScreen> {
     final packages = data.packages;
     final qrToken = widget.resolved?.qrToken;
     final hasQr = qrToken != null && qrToken.isNotEmpty;
+    final resolvedActiveSession = widget.resolved?.activeSession;
+    final hasActiveSession =
+        resolvedActiveSession != null || machine.activeSession != null;
+    final allowExtension = widget.resolved?.allowExtension ?? true;
     final selected = _selected ?? (packages.isNotEmpty ? packages.first : null);
-    final canRent = machine.isAvailable && packages.isNotEmpty && hasQr;
+    final canRent =
+        machine.isAvailable && !hasActiveSession && packages.isNotEmpty && hasQr;
+    final canExtend =
+        hasActiveSession &&
+        resolvedActiveSession != null &&
+        allowExtension &&
+        packages.isNotEmpty &&
+        hasQr;
 
     return Scaffold(
       appBar: AppBar(
@@ -69,7 +82,28 @@ class _MachineScreenState extends ConsumerState<MachineScreen> {
         children: [
           _MachineHeader(machine: machine),
           const SizedBox(height: 14),
-          if (machine.activeSession != null) ...[
+          if (resolvedActiveSession != null) ...[
+            _ActiveSessionBanner(
+              session: resolvedActiveSession,
+              serverTime: widget.resolved?.serverTime,
+              timezone: timezone,
+              onOpen: () => context.push(
+                '/session/${resolvedActiveSession.id}',
+                extra: resolvedActiveSession,
+              ),
+            ),
+            const SizedBox(height: 14),
+            if (!allowExtension) ...[
+              const _NoticeBanner(
+                icon: Icons.block,
+                color: AppColors.warning,
+                title: 'Extensions disabled',
+                message:
+                    'The administrator has disabled adding time to active sessions.',
+              ),
+              const SizedBox(height: 14),
+            ],
+          ] else if (machine.activeSession != null) ...[
             _InUseBanner(
               session: machine.activeSession!,
               timezone: timezone,
@@ -112,7 +146,7 @@ class _MachineScreenState extends ConsumerState<MachineScreen> {
             const SizedBox(height: 14),
           ],
           SectionHeader(
-            title: 'Choose a package',
+            title: hasActiveSession ? 'Add more play time' : 'Choose a package',
             subtitle: 'Prices and durations are set by the administrator',
           ),
           if (packages.isEmpty)
@@ -130,7 +164,7 @@ class _MachineScreenState extends ConsumerState<MachineScreen> {
                 child: _PackageTile(
                   package: package,
                   selected: selected?.id == package.id,
-                  enabled: canRent,
+                  enabled: canRent || canExtend,
                   onTap: () => setState(() => _selected = package),
                 ),
               ),
@@ -162,7 +196,7 @@ class _MachineScreenState extends ConsumerState<MachineScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: canRent && selected != null
+      bottomNavigationBar: (canRent || canExtend) && selected != null
           ? SafeArea(
               child: Container(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -178,7 +212,9 @@ class _MachineScreenState extends ConsumerState<MachineScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            selected.name,
+                            canExtend
+                                ? '+${selected.durationMinutes} min • ${selected.name}'
+                                : selected.name,
                             style: const TextStyle(
                               fontSize: 11.5,
                               color: AppColors.textSecondary,
@@ -206,16 +242,17 @@ class _MachineScreenState extends ConsumerState<MachineScreen> {
                             machine: machine,
                             package: selected,
                             qrToken: qrToken,
+                            activeSession: canExtend ? resolvedActiveSession : null,
                           ),
                         ),
-                        child: const Text('Confirm cash'),
+                        child: Text(canExtend ? 'Add More Time' : 'Confirm cash'),
                       ),
                     ),
                   ],
                 ),
               ),
             )
-          : machine.isAvailable && !hasQr
+          : machine.isAvailable && !hasActiveSession && !hasQr
           ? SafeArea(
               child: Container(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -448,6 +485,96 @@ class _PackageTile extends StatelessWidget {
               fontSize: 15,
               fontWeight: FontWeight.w800,
               color: selected ? AppColors.brand : AppColors.navy,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActiveSessionBanner extends StatelessWidget {
+  const _ActiveSessionBanner({
+    required this.session,
+    required this.serverTime,
+    required this.timezone,
+    required this.onOpen,
+  });
+
+  final SessionModel session;
+  final DateTime? serverTime;
+  final String timezone;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.navy,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.timer_outlined, color: AppColors.brandLight, size: 18),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Active session in progress',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              StatusBadge.session(session.status),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              SessionCountdown(
+                session: session,
+                serverTime: serverTime,
+                compact: true,
+                style: const TextStyle(fontSize: 28, color: Colors.white),
+              ),
+              const Spacer(),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    session.packageName,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.navy200,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    'Ends ${formatTime(session.endsAt, timezone: timezone)}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.navy400,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: onOpen,
+              child: const Text(
+                'Open session details',
+                style: TextStyle(color: AppColors.brandLight),
+              ),
             ),
           ),
         ],

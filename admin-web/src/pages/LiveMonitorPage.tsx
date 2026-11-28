@@ -363,18 +363,28 @@ export function LiveMonitorPage() {
             {session.extensions.length > 0 ? (
               <div>
                 <p className="mb-2 text-xs font-semibold tracking-wider text-navy-500 uppercase">
-                  Extensions
+                  Extensions ({session.extensions.length})
                 </p>
                 <div className="space-y-2">
                   {session.extensions.map((extension) => (
                     <div
                       key={extension.id}
-                      className="flex items-center justify-between rounded-lg border border-navy-100 px-3 py-2 text-xs"
+                      className="rounded-lg border border-navy-100 bg-navy-50/40 px-3 py-2.5 text-xs"
                     >
-                      <span className="font-medium text-navy-800">{extension.packageName}</span>
-                      <span className="text-navy-500">
-                        +{extension.durationMinutes} min • {formatEtb(extension.priceSantim)}
-                      </span>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-navy-900">{extension.packageName}</span>
+                        <span className="font-semibold text-brand-700">
+                          +{extension.durationMinutes} min • {formatEtb(extension.priceSantim)}
+                        </span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-navy-500">
+                        <span>
+                          End time: {formatDateTime(extension.previousEndsAt)} → {formatDateTime(extension.newEndsAt)}
+                        </span>
+                        {extension.createdBy ? <span>By: {extension.createdBy.fullName}</span> : null}
+                        {extension.paymentRef ? <span className="font-mono">{extension.paymentRef}</span> : null}
+                        <span>Added: {formatDateTime(extension.createdAt)}</span>
+                      </div>
                     </div>
                   ))}
                 </div>

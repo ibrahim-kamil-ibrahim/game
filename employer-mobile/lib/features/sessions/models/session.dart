@@ -7,6 +7,8 @@ class SessionExtension {
     this.createdAt,
     this.previousEndsAt,
     this.newEndsAt,
+    this.paymentRef,
+    this.createdByName,
   });
 
   final String id;
@@ -16,8 +18,11 @@ class SessionExtension {
   final DateTime? createdAt;
   final DateTime? previousEndsAt;
   final DateTime? newEndsAt;
+  final String? paymentRef;
+  final String? createdByName;
 
   factory SessionExtension.fromJson(Map<String, dynamic> json) {
+    final createdBy = json['createdBy'];
     return SessionExtension(
       id: json['id'] as String? ?? '',
       packageName: json['packageName'] as String? ?? '',
@@ -26,6 +31,10 @@ class SessionExtension {
       createdAt: _date(json['createdAt']),
       previousEndsAt: _date(json['previousEndsAt']),
       newEndsAt: _date(json['newEndsAt']),
+      paymentRef: json['paymentRef'] as String?,
+      createdByName: createdBy is Map<String, dynamic>
+          ? createdBy['fullName'] as String?
+          : null,
     );
   }
 }

@@ -1,3 +1,5 @@
+import '../../sessions/models/session.dart';
+
 DateTime? parseDate(dynamic value) {
   if (value is String) return DateTime.tryParse(value);
   return null;
@@ -122,9 +124,17 @@ class ResolvedMachine {
     required this.machine,
     required this.packages,
     this.qrToken,
+    this.available = true,
+    this.activeSession,
+    this.serverTime,
+    this.allowExtension = true,
   });
 
   final MachineModel machine;
   final List<PackageOption> packages;
   final String? qrToken;
+  final bool available;
+  final SessionModel? activeSession;
+  final DateTime? serverTime;
+  final bool allowExtension;
 }

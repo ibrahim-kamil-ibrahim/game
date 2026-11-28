@@ -238,26 +238,40 @@ describe('Cash payments and session lifecycle', () => {
   });
 
   it('extends a paid session with a separate recorded transaction', async () => {
-    const { session } = await startReadySession({ durationMinutes: 10, priceSantim: 2000 });
+    const { machine, qrPayload, session } = await startReadySession({ durationMinutes: 10, priceSantim: 2000 });
     const extensionPackage = await createPackage(ctx.businessId, {
       name: 'Extension 10',
       durationMinutes: 10,
       priceSantim: 1500,
     });
 
+    // Scanning the occupied machine QR returns the active session and allowed packages.
+    const resolved = await api
+      .post('/api/v1/qr/resolve')
+      .set(auth(ctx.employerToken))
+      .send({ token: qrPayload });
+    expect(resolved.status).toBe(200);
+    expect(resolved.body.data.available).toBe(false);
+    expect(resolved.body.data.activeSession.id).toBe(session.id);
+
     const before = new Date(session.endsAt).getTime();
 
     const extended = await api
-      .post(`/api/v1/sessions/${session.id}/extend`)
+      .post(`/api/v1/sessions/${session.id}/extensions`)
       .set(auth(ctx.employerToken))
-      .send({ packageId: extensionPackage.id, idempotencyKey: 'extension-1' });
+      .send({ packageId: extensionPackage.id, idempotencyKey: 'extension-1', qrToken: qrPayload });
 
     expect(extended.status).toBe(200);
+    expect(extended.body.data.id).toBe(session.id);
+    expect(extended.body.data.status).toBe('ACTIVE');
     expect(extended.body.data.endsAt).toBeTruthy();
-    expect(new Date(extended.body.data.endsAt).getTime()).toBeGreaterThan(before);
+    expect(new Date(extended.body.data.endsAt).getTime()).toBe(before + 10 * 60_000);
     expect(extended.body.data.extensions).toHaveLength(1);
     expect(extended.body.data.extensions[0].priceSantim).toBe(1500);
     expect(extended.body.data.priceSantim).toBe(3500);
+
+    const machineAfter = await prisma.gameMachine.findUniqueOrThrow({ where: { id: machine.id } });
+    expect(machineAfter.status).toBe('IN_USE');
 
     const extensionPayment = await prisma.payment.findFirst({
       where: { idempotencyKey: 'extension-1' },
@@ -265,12 +279,57 @@ describe('Cash payments and session lifecycle', () => {
     expect(extensionPayment!.type).toBe('EXTENSION');
     expect(extensionPayment!.amountSantim).toBe(1500);
 
-    const duplicate = await api
-      .post(`/api/v1/sessions/${session.id}/extend`)
+    // Concurrent duplicate requests with the same idempotencyKey must not double-extend.
+    const [dupA, dupB] = await Promise.all([
+      api
+        .post(`/api/v1/sessions/${session.id}/extensions`)
+        .set(auth(ctx.employerToken))
+        .send({ packageId: extensionPackage.id, idempotencyKey: 'extension-1', qrToken: qrPayload }),
+      api
+        .post(`/api/v1/sessions/${session.id}/extensions`)
+        .set(auth(ctx.employerToken))
+        .send({ packageId: extensionPackage.id, idempotencyKey: 'extension-1', qrToken: qrPayload }),
+    ]);
+    expect(dupA.status).toBe(200);
+    expect(dupB.status).toBe(200);
+    expect(dupA.body.data.extensions).toHaveLength(1);
+    expect(dupB.body.data.extensions).toHaveLength(1);
+  });
+
+  it('rejects extending expired sessions or without matching QR token', async () => {
+    const { qrPayload, session } = await startReadySession({ durationMinutes: 10, priceSantim: 2000 });
+    const { qrPayload: otherQr } = await createMachineWithQr(ctx.businessId, { code: 'EXT-OTHER' });
+    const extensionPackage = await createPackage(ctx.businessId, {
+      name: 'Extension Check',
+      durationMinutes: 10,
+      priceSantim: 1500,
+    });
+
+    const missingQr = await api
+      .post(`/api/v1/sessions/${session.id}/extensions`)
       .set(auth(ctx.employerToken))
-      .send({ packageId: extensionPackage.id, idempotencyKey: 'extension-1' });
-    expect(duplicate.status).toBe(200);
-    expect(duplicate.body.data.extensions).toHaveLength(1);
+      .send({ packageId: extensionPackage.id, idempotencyKey: 'ext-no-qr' });
+    expect(missingQr.status).toBe(400);
+    expect(missingQr.body.error.code).toBe('QR_REQUIRED');
+
+    const wrongQr = await api
+      .post(`/api/v1/sessions/${session.id}/extensions`)
+      .set(auth(ctx.employerToken))
+      .send({ packageId: extensionPackage.id, idempotencyKey: 'ext-wrong-qr', qrToken: otherQr });
+    expect(wrongQr.status).toBe(403);
+    expect(wrongQr.body.error.code).toBe('QR_MISMATCH');
+
+    await prisma.gameSession.update({
+      where: { id: session.id },
+      data: { endsAt: new Date(Date.now() - 60_000) },
+    });
+
+    const expiredAttempt = await api
+      .post(`/api/v1/sessions/${session.id}/extensions`)
+      .set(auth(ctx.employerToken))
+      .send({ packageId: extensionPackage.id, idempotencyKey: 'ext-expired', qrToken: qrPayload });
+    expect(expiredAttempt.status).toBe(409);
+    expect(expiredAttempt.body.error.code).toBe('SESSION_EXPIRED');
   });
 
   it('honours admin settings for extensions, pausing and manual ending', async () => {

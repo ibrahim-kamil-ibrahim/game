@@ -51,9 +51,9 @@ describe('Financial reports and exports', () => {
       priceSantim: 1500,
     });
     const extended = await api
-      .post(`/api/v1/sessions/${second.session.id}/extend`)
+      .post(`/api/v1/sessions/${second.session.id}/extensions`)
       .set(auth(ctx.employerToken))
-      .send({ packageId: extensionPackage.id, idempotencyKey: 'report-extension' });
+      .send({ packageId: extensionPackage.id, idempotencyKey: 'report-extension', qrToken: second.qrPayload });
     expect(extended.status).toBe(200);
 
     // Voided payments never count as revenue.
